@@ -1,0 +1,27 @@
+version: "3"
+services:
+    database:
+        container_name: sellorama_db
+        image: postgres:latest
+        restart: always
+        env_file:
+            - .env
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U sr_admin -d sellorama_db"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        ports:
+            - 5432:5432
+        volumes:
+            - ./backend/init:/docker-entrypoint-initdb.d
+            # - ./pgdata:/var/lib/postgresql/data
+    adminer:
+        container_name: adminer
+        image: adminer
+        restart: always
+        depends_on:
+            database:
+                condition: service_healthy
+        ports:
+            - 8080:8080
