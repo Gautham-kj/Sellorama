@@ -144,7 +144,39 @@ pub mod user {
         }
     }
 
-   
+
+    #[utoipa::path(
+        get,
+        path = "/user/{user_id}",
+        responses(
+            (status = 201, body=UserResponse),
+            (status = 404, body = GeneralResponse )
+        )
+    )]
+    pub async fn get_user_by_id(
+        state: State<AppState>,
+        Path(username): Path<Uuid>,
+    ) -> impl IntoResponse {
+        let query = r#"
+        SELECT * FROM "user" WHERE "user_id"=$1;
+        "#;
+
+        match sqlx::query_as::<_, User>(query)
+            .bind(username)
+            .fetch_optional(&state.db_pool)
+            .await
+            .expect("Server Error")
+        {
+            Some(user) => (StatusCode::OK, Json(json!(UserResponse { detail: user }))),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!(GeneralResponse {
+                    detail: "User Not Found".to_string()
+                })),
+            ),
+        }
+    }
+
 
     fn create_hashed_password(password: String) -> String {
         let hashed_password = general_purpose::STANDARD.encode(password);
