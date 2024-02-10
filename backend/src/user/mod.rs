@@ -178,6 +178,73 @@ pub mod user {
     }
 
 
+    #[utoipa::path(
+        post,
+        path = "/user/login",
+        responses(
+            (status = 201, body=SessionResponse),
+            (status = 401, body=GeneralResponse)
+        )
+    )]
+    pub async fn user_login(
+        state: State<AppState>,
+        Form(form_data): Form<UserLogin>,
+    ) -> impl IntoResponse {
+        let (username, hashed_password) = (
+            form_data.username,
+            create_hashed_password(form_data.password),
+        );
+        invalidate_dangling_sessions(&state.db_pool)
+            .await
+            .expect("Error Deleting invalid sessions");
+        let query = r#"
+            WITH INS AS (
+                SELECT "user_id" FROM "user"
+                WHERE "username" = $1 
+            )
+            SELECT "user_id" FROM "password"
+            WHERE "user_id" in (SELECT * FROM INS) AND "hashed_pass" = $2
+        "#;
+
+        match sqlx::query_as::<_, UserId>(query)
+            .bind(username)
+            .bind(hashed_password)
+            .fetch_one(&state.db_pool)
+            .await
+        {
+            Ok(user) => {
+                match create_session(
+                    &state.db_pool,
+                    user.user_id,
+                    Utc::now().naive_utc() + Duration::days(1),
+                )
+                .await
+                {
+                    Some(session) => {
+                        println!("Session {} created", session.session_id);
+                        (
+                            StatusCode::CREATED,
+                            Json(json!(SessionResponse { detail: session })),
+                        )
+                    }
+                    None => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!(GeneralResponse {
+                            detail: "Error Creating Session".to_string()
+                        })),
+                    ),
+                }
+            }
+            Err(_e) => (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Wrong username or password".to_string()
+                })),
+            ),
+        }
+    }
+
+
     fn create_hashed_password(password: String) -> String {
         let hashed_password = general_purpose::STANDARD.encode(password);
         hashed_password
