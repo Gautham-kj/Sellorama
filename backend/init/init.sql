@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA public;
 CREATE TABLE "user" (
   user_id uuid DEFAULT uuid_generate_v4(), 
   username VARCHAR(255) unique NOT NULL, 
@@ -9,7 +9,7 @@ CREATE TABLE "user" (
 );
 create table "password" (
   user_id uuid, 
-  password VARCHAR(255) NOT NULL, 
+  hashed_pass VARCHAR(255) NOT NULL, 
   foreign key (user_id) references "user"(user_id) ON DELETE CASCADE
 );
 create table "post" (
