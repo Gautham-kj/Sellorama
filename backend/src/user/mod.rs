@@ -144,7 +144,6 @@ pub mod user {
         }
     }
 
-
     #[utoipa::path(
         get,
         path = "/user/{user_id}",
@@ -176,7 +175,6 @@ pub mod user {
             ),
         }
     }
-
 
     #[utoipa::path(
         post,
@@ -244,6 +242,39 @@ pub mod user {
         }
     }
 
+    #[utoipa::path(
+        post,
+        path = "/user/logout",
+        responses(
+            (status = 201, body=SessionResponse),
+            (status = 401, body=GeneralResponse)
+        )
+    )]
+    pub async fn logout(
+        state: State<AppState>,
+        Form(form_data): Form<Session>,
+    ) -> impl IntoResponse {
+        match invalidate_session(&state.db_pool, form_data.session_id).await {
+            Ok(t) => {
+                println!("Session {t} deleted");
+                (
+                    StatusCode::OK,
+                    Json(json!(GeneralResponse {
+                        detail: "User logged out".to_string()
+                    })),
+                )
+            }
+            Err(e) => {
+                println!("Error: {e}");
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!(GeneralResponse {
+                        detail: "Error while logging out".to_string()
+                    })),
+                )
+            }
+        }
+    }
 
     fn create_hashed_password(password: String) -> String {
         let hashed_password = general_purpose::STANDARD.encode(password);
