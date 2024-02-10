@@ -4,9 +4,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-
+use chrono::Duration;
 use serde::Serialize;
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use utoipa::ToSchema;
 
 use utoipa::OpenApi;
@@ -32,17 +32,21 @@ struct Ping {
 #[openapi(
     paths(
         // ping,
+        User::signup,
         User::get_user_by_id,
-        User::signup
+        User::user_login,
+        User::logout
     ),
     components(
         schemas(
             Ping,
             User::User,
             User::CreateUserForm,
-            // UserSession,
-            User::GeneralResponse<User::User>,
-            User::GeneralResponse<String>
+            User::UserLogin,
+            User::Session,
+            User::GeneralResponse,
+            User::SessionResponse,
+            User::UserResponse
         )
     )
 )]
@@ -51,7 +55,7 @@ struct ApiDoc;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    
+
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -60,14 +64,18 @@ async fn main() {
         .expect("Error building a connection pool");
 
     match sqlx::migrate!("./migrations").run(&pool).await {
-        Err(e) => panic!("{e}"),
+        Err(e) => println!("{e}"),
         Ok(_) => (),
     };
 
-    let dbpool = AppState { db_pool: pool.clone() };
+    let dbpool = AppState {
+        db_pool: pool.clone(),
+    };
 
     let user_router = Router::new()
+        .route("/login", post(User::user_login))
         .route("/signup", post(User::signup))
+        .route("/logout", post(User::logout))
         .route("/:username", get(User::get_user_by_id))
         .with_state(dbpool.clone());
 
@@ -82,10 +90,9 @@ async fn main() {
         .nest("/comment", comment_router)
         .with_state(dbpool)
         .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()));
-    
+
     let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
-
 }
 
 #[utoipa::path(

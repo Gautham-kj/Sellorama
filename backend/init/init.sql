@@ -24,7 +24,6 @@ CREATE TABLE "post" (
     PRIMARY KEY (post_id),
     FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE
 );
-
 -- create table "postmedia"();
 CREATE TABLE "comment" (
     comment_id UUID DEFAULT UUID_generate_v4 (),

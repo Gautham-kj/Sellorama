@@ -16,6 +16,16 @@ services:
         volumes:
             - ./backend/init:/docker-entrypoint-initdb.d
             # - ./pgdata:/var/lib/postgresql/data
+    # backend:
+    #     container_name: sellorama_backend
+    #     build:
+    #         context: ./backend
+    #         dockerfile: Dockerfile
+    #     depends_on:
+    #         database:
+    #             condition: service_healthy
+    #     ports:
+    #         - 9000:9000
     adminer:
         container_name: adminer
         image: adminer
