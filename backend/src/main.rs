@@ -17,8 +17,8 @@ use utoipa_redoc::{Redoc, Servable};
 pub mod user;
 use crate::user::user as User;
 
-// pub mod item;
-// use crate::post::post as Post;
+pub mod item;
+use crate::item::item as Item;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -39,7 +39,8 @@ title = "Sellorama"),
         User::signup,
         User::get_user_by_id,
         User::user_login,
-        User::logout
+        User::logout,
+        Item::create_item
     ),
     components(
         schemas(
@@ -48,9 +49,13 @@ title = "Sellorama"),
             User::CreateUserForm,
             User::UserLogin,
             User::Session,
+            User::UserWithSession,
             User::GeneralResponse,
             User::SessionResponse,
-            User::UserResponse
+            User::UserResponse,
+            Item::Item,
+            Item::ItemForm,
+            Item::ItemResponse,
         )
     )
 )]
@@ -83,7 +88,9 @@ async fn main() {
         .route("/:username", get(User::get_user_by_id))
         .with_state(dbpool.clone());
 
-    let item_router = Router::new().with_state(dbpool.clone());
+    let item_router = Router::new().with_state(dbpool.clone())
+        .route("/create",post(Item::create_item))
+        .with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());
 
@@ -95,7 +102,6 @@ async fn main() {
         .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"));
-        
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:9008").await.unwrap();
     axum::serve(listener, app).await.unwrap();

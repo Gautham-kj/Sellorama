@@ -31,7 +31,13 @@ pub mod user {
 
     #[derive(Deserialize, Serialize, ToSchema, FromRow)]
     pub struct Session {
-        session_id: Uuid,
+        pub session_id: Uuid,
+    }
+
+    #[derive(Deserialize, Serialize, ToSchema, FromRow)]
+    pub struct UserWithSession {
+        pub session_id: Uuid,
+        pub user_id:Uuid
     }
 
     #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -47,7 +53,7 @@ pub mod user {
 
     #[derive(ToSchema, Serialize)]
     pub struct GeneralResponse {
-        detail: String,
+        pub detail: String,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -349,18 +355,21 @@ pub mod user {
     pub async fn check_session_validity(
         pool: &Pool<Postgres>,
         session_id: Uuid,
-    ) -> Option<Session> {
+    ) -> Option<UserWithSession> {
         let query = r#"
-            SELECT "session_id" FROM "sessions" WHERE "session_id" = $1 AND "expiry" > CURRENT_TIMESTAMP;
+            SELECT "user_id","session_id" FROM "sessions" 
+            WHERE 
+            "session_id" = $1 AND "expiry" > CURRENT_TIMESTAMP;
         "#;
-        match sqlx::query_as::<_, Session>(query)
+        match sqlx::query_as::<_, UserWithSession>(query)
             .bind(session_id)
             .fetch_optional(pool)
             .await
             .expect("Error accessing database")
         {
-            Some(response) => Some(Session {
+            Some(response) => Some(UserWithSession {
                 session_id: response.session_id,
+                user_id: response.user_id
             }),
             None => None,
         }
