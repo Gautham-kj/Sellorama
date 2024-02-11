@@ -17,8 +17,8 @@ create table "password" (
 
 CREATE TABLE "item" (
     item_id UUID DEFAULT UUID_generate_v4 (),
-    user_id UUID,
-    title varchar(255) NOT NULL,
+    user_id UUID NOT NULL,
+    title varchar(100) NOT NULL,
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (item_id),
