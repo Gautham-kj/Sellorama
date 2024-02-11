@@ -11,11 +11,13 @@ use utoipa::ToSchema;
 
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use utoipa_rapidoc::RapiDoc;
+use utoipa_redoc::{Redoc, Servable};
 
 pub mod user;
 use crate::user::user as User;
 
-pub mod post;
+// pub mod item;
 // use crate::post::post as Post;
 
 #[derive(Clone)]
@@ -30,6 +32,8 @@ struct Ping {
 
 #[derive(OpenApi)]
 #[openapi(
+    info(description = "API documentation for Sellorama",
+title = "Sellorama"),
     paths(
         // ping,
         User::signup,
@@ -79,19 +83,21 @@ async fn main() {
         .route("/:username", get(User::get_user_by_id))
         .with_state(dbpool.clone());
 
-    let post_router = Router::new().with_state(dbpool.clone());
+    let item_router = Router::new().with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());
 
     let app = Router::new()
         .route("/", get(ping))
         .nest("/user", user_router)
-        .nest("/post", post_router)
+        .nest("/item", item_router)
         .nest("/comment", comment_router)
-        .with_state(dbpool)
-        .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()));
+        .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()))
+        .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
+        .merge(RapiDoc::new("/apidoc").path("/rapidoc"));
+        
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:9008").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
