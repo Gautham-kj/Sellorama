@@ -15,24 +15,24 @@ create table "password" (
 
 );
 
-CREATE TABLE "post" (
-    post_id UUID DEFAULT UUID_generate_v4 (),
+CREATE TABLE "item" (
+    item_id UUID DEFAULT UUID_generate_v4 (),
     user_id UUID,
     title varchar(255) NOT NULL,
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (post_id),
+    PRIMARY KEY (item_id),
     FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE
 );
 -- create table "postmedia"();
 CREATE TABLE "comment" (
     comment_id UUID DEFAULT UUID_generate_v4 (),
     user_id UUID,
-    post_id UUID,
+    item_id UUID,
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (comment_id),
     FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE,
-    FOREIGN KEY (post_id) REFERENCES "post" (post_id) ON DELETE CASCADE
+    FOREIGN KEY (item_id) REFERENCES "item" (item_id) ON DELETE CASCADE
 );
 
