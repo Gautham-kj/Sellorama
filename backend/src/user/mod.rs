@@ -34,10 +34,10 @@ pub mod user {
         pub session_id: Uuid,
     }
 
-    #[derive(Deserialize, Serialize, ToSchema, FromRow)]
+    #[derive(Deserialize, Serialize, ToSchema, FromRow,Debug)]
     pub struct UserWithSession {
         pub session_id: Uuid,
-        pub user_id:Uuid
+        pub user_id: Uuid,
     }
 
     #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -369,7 +369,7 @@ pub mod user {
         {
             Some(response) => Some(UserWithSession {
                 session_id: response.session_id,
-                user_id: response.user_id
+                user_id: response.user_id,
             }),
             None => None,
         }
