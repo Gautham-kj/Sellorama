@@ -15,17 +15,29 @@ services:
             - 5432:5432
         volumes:
             - ./backend/init:/docker-entrypoint-initdb.d
-            # - ./pgdata:/var/lib/postgresql/data
-    # backend:
-    #     container_name: sellorama_backend
-    #     build:
-    #         context: ./backend
-    #         dockerfile: Dockerfile
-    #     depends_on:
-    #         database:
-    #             condition: service_healthy
-    #     ports:
-    #         - 9000:9000
+            - pgdata:/var/lib/postgresql/data
+        networks:
+            network1:
+                ipv4_address: 172.20.0.5
+    backend:
+        container_name: sellorama_backend
+        build:
+            context: ./backend
+            dockerfile: Dockerfile
+        depends_on:
+            database:
+                condition: service_healthy
+        develop:
+            watch:
+                - action: sync+restart
+                  path: ./backend/src
+                  target: /app/src
+
+        ports:
+            - 9000:9000
+        networks:
+            network1:
+                ipv4_address: 172.20.0.6
     adminer:
         container_name: adminer
         image: adminer
@@ -35,3 +47,14 @@ services:
                 condition: service_healthy
         ports:
             - 8080:8080
+        networks:
+            network1:
+                ipv4_address: 172.20.0.7
+networks:
+    network1:
+        ipam:
+            driver: default
+            config:
+                - subnet: 172.20.0.0/24
+volumes:
+    pgdata:

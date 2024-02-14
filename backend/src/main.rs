@@ -103,7 +103,7 @@ async fn main() {
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:9008").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
