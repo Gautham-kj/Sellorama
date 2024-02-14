@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use chrono::Duration;
@@ -9,10 +9,13 @@ use serde::Serialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use utoipa::ToSchema;
 
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa::{
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    Modify, OpenApi,
+};
 use utoipa_rapidoc::RapiDoc;
 use utoipa_redoc::{Redoc, Servable};
+use utoipa_swagger_ui::SwaggerUi;
 
 pub mod user;
 use crate::user::user as User;
@@ -40,7 +43,8 @@ title = "Sellorama"),
         User::get_user_by_id,
         User::user_login,
         User::logout,
-        Item::create_item
+        Item::create_item,
+        Item::delete_item
     ),
     components(
         schemas(
@@ -57,9 +61,23 @@ title = "Sellorama"),
             Item::ItemForm,
             Item::ItemResponse,
         )
-    )
+    ),
+    modifiers(&SecurityAddon)
 )]
 struct ApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "session_id",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("session_id"))),
+            )
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -88,8 +106,10 @@ async fn main() {
         .route("/:username", get(User::get_user_by_id))
         .with_state(dbpool.clone());
 
-    let item_router = Router::new().with_state(dbpool.clone())
-        .route("/create",post(Item::create_item))
+    let item_router = Router::new()
+        .with_state(dbpool.clone())
+        .route("/create", post(Item::create_item))
+        .route("/:item_id", delete(Item::delete_item))
         .with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());
