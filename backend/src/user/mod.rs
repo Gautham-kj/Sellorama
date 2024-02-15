@@ -34,7 +34,7 @@ pub mod user {
         pub session_id: Uuid,
     }
 
-    #[derive(Deserialize, Serialize, ToSchema, FromRow,Debug)]
+    #[derive(Deserialize, Serialize, ToSchema, FromRow, Debug)]
     pub struct UserWithSession {
         pub session_id: Uuid,
         pub user_id: Uuid,

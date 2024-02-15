@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use chrono::Duration;
@@ -44,7 +44,8 @@ title = "Sellorama"),
         User::user_login,
         User::logout,
         Item::create_item,
-        Item::delete_item
+        Item::delete_item,
+        Item::edit_item
     ),
     components(
         schemas(
@@ -58,6 +59,7 @@ title = "Sellorama"),
             User::SessionResponse,
             User::UserResponse,
             Item::Item,
+            Item::ItemId,
             Item::ItemForm,
             Item::ItemResponse,
         )
@@ -110,6 +112,7 @@ async fn main() {
         .with_state(dbpool.clone())
         .route("/create", post(Item::create_item))
         .route("/:item_id", delete(Item::delete_item))
+        .route("/:item_id", put(Item::edit_item))
         .with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());
