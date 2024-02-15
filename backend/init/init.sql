@@ -21,6 +21,7 @@ CREATE TABLE "item" (
     title varchar(100) NOT NULL,
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
+    price real NOT NULL,
     PRIMARY KEY (item_id),
     FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE
 );
