@@ -17,11 +17,14 @@ use utoipa_rapidoc::RapiDoc;
 use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
-pub mod user;
-use crate::user::user as User;
-
 pub mod item;
-use crate::item::item as Item;
+pub mod user;
+
+use item::{create_item, delete_item, edit_item, Item, ItemForm, ItemId, ItemResponse};
+use user::{
+    get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
+    SessionResponse, User, UserLogin, UserResponse, UserWithSession,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -38,30 +41,29 @@ struct Ping {
     info(description = "API documentation for Sellorama",
 title = "Sellorama"),
     paths(
-        // ping,
-        User::signup,
-        User::get_user_by_id,
-        User::user_login,
-        User::logout,
-        Item::create_item,
-        Item::delete_item,
-        Item::edit_item
+        user::signup,
+        user::get_user_by_id,
+        user::user_login,
+        user::logout,
+        item::create_item,
+        item::delete_item,
+        item::edit_item
     ),
     components(
         schemas(
             Ping,
-            User::User,
-            User::CreateUserForm,
-            User::UserLogin,
-            User::Session,
-            User::UserWithSession,
-            User::GeneralResponse,
-            User::SessionResponse,
-            User::UserResponse,
-            Item::Item,
-            Item::ItemId,
-            Item::ItemForm,
-            Item::ItemResponse,
+            User,
+            CreateUserForm,
+            UserLogin,
+            Session,
+            UserWithSession,
+            GeneralResponse,
+            SessionResponse,
+            UserResponse,
+            Item,
+            ItemId,
+            ItemForm,
+            ItemResponse,
         )
     ),
     modifiers(&SecurityAddon)
@@ -102,17 +104,17 @@ async fn main() {
     };
 
     let user_router = Router::new()
-        .route("/login", post(User::user_login))
-        .route("/signup", post(User::signup))
-        .route("/logout", post(User::logout))
-        .route("/:username", get(User::get_user_by_id))
+        .route("/login", post(user_login))
+        .route("/signup", post(signup))
+        .route("/logout", post(logout))
+        .route("/:username", get(get_user_by_id))
         .with_state(dbpool.clone());
 
     let item_router = Router::new()
         .with_state(dbpool.clone())
-        .route("/create", post(Item::create_item))
-        .route("/:item_id", delete(Item::delete_item))
-        .route("/:item_id", put(Item::edit_item))
+        .route("/create", post(create_item))
+        .route("/:item_id", delete(delete_item))
+        .route("/:item_id", put(edit_item))
         .with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());
