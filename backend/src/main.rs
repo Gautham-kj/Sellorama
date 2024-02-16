@@ -20,7 +20,7 @@ use utoipa_swagger_ui::SwaggerUi;
 pub mod item;
 pub mod user;
 
-use item::{create_item, delete_item, edit_item, Item, ItemForm, ItemId, ItemResponse};
+use item::{create_item, delete_item, edit_item, get_item, Item, ItemForm, ItemId, ItemResponse};
 use user::{
     get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
     SessionResponse, User, UserLogin, UserResponse, UserWithSession,
@@ -46,8 +46,9 @@ title = "Sellorama"),
         user::user_login,
         user::logout,
         item::create_item,
+        item::edit_item,
+        item::get_item,
         item::delete_item,
-        item::edit_item
     ),
     components(
         schemas(
@@ -113,8 +114,10 @@ async fn main() {
     let item_router = Router::new()
         .with_state(dbpool.clone())
         .route("/create", post(create_item))
-        .route("/:item_id", delete(delete_item))
-        .route("/:item_id", put(edit_item))
+        .route(
+            "/:item_id",
+            delete(delete_item).put(edit_item).get(get_item),
+        )
         .with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());

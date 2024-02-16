@@ -1,4 +1,3 @@
-
 use crate::user::{check_session_validity, GeneralResponse};
 use crate::AppState;
 use axum::{
@@ -10,7 +9,7 @@ use axum::{
 // use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{prelude::FromRow, types::chrono, Pool, Postgres};
+use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -32,11 +31,12 @@ pub struct Item {
     user_id: Uuid,
     title: String,
     content: String,
+    price: f32,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ItemResponse {
-    detail: ItemId,
+    detail: Item,
     sameuser: bool,
 }
 
@@ -86,13 +86,10 @@ pub async fn create_item(
                 .await
                 .unwrap()
             {
-                Some(response) => (
+                Some(_response) => (
                     StatusCode::CREATED,
-                    Json(json!(ItemResponse {
-                        detail: ItemId {
-                            item_id: response.item_id
-                        },
-                        sameuser: true
+                    Json(json!(GeneralResponse {
+                        detail: "Item Created".to_string()
                     })),
                 ),
                 None => (
@@ -259,6 +256,79 @@ pub async fn edit_item(
                         })),
                     )
                 }
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Inavlid credentials".to_string()
+            })),
+        ),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/item/{id}",
+    security(
+        ("session_id"=[])
+    ),
+    responses(
+        (status = 200 , body = GeneralResponse),
+        (status = 401 , body = GeneralResponse),
+        (status = 500 , body = GeneralResponse),
+    )
+)]
+pub async fn get_item(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Path(item_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let session;
+    match headers.get("session_id") {
+        Some(session_id) => session = session_id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid credentials".to_string()
+                })),
+            )
+        }
+    };
+    let session_id = Uuid::parse_str(session.to_str().unwrap()).unwrap();
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(uresponse) => {
+            let query = r#"
+            SELECT * FROM "item" WHERE "item_id" = $1;"#;
+            match sqlx::query_as::<_, Item>(query)
+                .bind(item_id)
+                .fetch_one(&state.db_pool)
+                .await
+            {
+                Ok(response) => (
+                    StatusCode::OK,
+                    Json(json!(ItemResponse {
+                        detail: Item {
+                            item_id: response.item_id,
+                            user_id: response.user_id,
+                            title: response.title,
+                            content: response.content,
+                            price: response.price
+                        },
+                        sameuser: if response.user_id == uresponse.user_id {
+                            true
+                        } else {
+                            false
+                        }
+                    })),
+                ),
+                Err(_e) => (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!(GeneralResponse {
+                        detail: "Invalid credentials".to_string()
+                    })),
+                ),
             }
         }
         None => (
