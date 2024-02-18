@@ -44,7 +44,7 @@ pub struct ItemResponse {
         post,
         path="/item/create",
         responses (
-            (status = 201, body = ItemResponse),
+            (status = 201, body = GeneralResponse),
             (status = 401, body = GeneralResponse),
             (status = 100, body = GeneralResponse)
         ),

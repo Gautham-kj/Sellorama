@@ -17,8 +17,8 @@ use utoipa_rapidoc::RapiDoc;
 use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
-pub mod item;
-pub mod user;
+mod item;
+mod user;
 
 use item::{create_item, delete_item, edit_item, get_item, Item, ItemForm, ItemId, ItemResponse};
 use user::{

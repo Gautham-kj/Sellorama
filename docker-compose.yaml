@@ -32,7 +32,6 @@ services:
                 - action: sync+restart
                   path: ./backend/src
                   target: /app/src
-
         ports:
             - 9000:9000
         networks:
