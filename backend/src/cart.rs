@@ -84,66 +84,66 @@ pub async fn get_cart(
     }
 }
 
-// #[utoipa::path(post,
-//     path = "/cart/item",
-//     security(
-//         ("session_id"=[])
-//     ),
-//     responses(
-//         (status =200 ,body = GeneralResponse),
-//         (status =500 ,body = GeneralResponse),
-//         (status =401 ,body = GeneralResponse),
-//     )
-// )]
-// pub async fn add_item(
-//     headers: HeaderMap,
-//     state: State<AppState>,
-//     Form(form_data): Form<CartItem>,
-// ) -> impl IntoResponse {
-//     let session_id ;
-//     match extract_session_header(headers).await{
-//         Some(session) => {session_id = session},
-//         None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
-//     }
-//     match check_session_validity(&state.db_pool, session_id).await {
-//         Some(userresponse) => {
-//             //     let query = r#"INSERT INTO "cart" ("cart_id","item_id","quantity")
-//             // VALUES ($1,$2,$3)
-//             // ON CONFLICT("cart_id","item_id")
-//             // DO UPDATE SET "quantity" = "quantity"+ EXCLUDED."quantity"  "#;
-//             match sqlx::query!(
-//                 r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
-//                 VALUES ($1,$2,$3) 
-//                 ON CONFLICT("cart_id","item_id")
-//                 DO UPDATE SET "quantity" = "cart"."quantity"+ EXCLUDED."quantity"  "#,
-//                 userresponse.user_id,
-//                 form_data.item_id,
-//                 form_data.quantity
-//             )
-//             .execute(&state.db_pool)
-//             .await
-//             {
-//                 Ok(_response) => (
-//                     StatusCode::OK,
-//                     Json(json!(GeneralResponse {
-//                         detail: "Cart updated".to_string()
-//                     })),
-//                 ),
-//                 Err(_e) => (
-//                     StatusCode::INTERNAL_SERVER_ERROR,
-//                     Json(json!(GeneralResponse {
-//                         detail: "Server Error".to_string()
-//                     })),
-//                 ),
-//             }
-//         }
-//         None => (
-//             StatusCode::UNAUTHORIZED,
-//             Json(json!(GeneralResponse {
-//                 detail: "Invalid Credentials".to_string()
-//             })),
-//         ),
-//     }
-// }
+#[utoipa::path(post,
+    path = "/cart/item",
+    security(
+        ("session_id"=[])
+    ),
+    responses(
+        (status =200 ,body = GeneralResponse),
+        (status =500 ,body = GeneralResponse),
+        (status =401 ,body = GeneralResponse),
+    )
+)]
+pub async fn add_item(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<CartItem>,
+) -> impl IntoResponse {
+    let session_id ;
+    match extract_session_header(headers).await{
+        Some(session) => {session_id = session},
+        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+    }
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(userresponse) => {
+            //     let query = r#"INSERT INTO "cart" ("cart_id","item_id","quantity")
+            // VALUES ($1,$2,$3)
+            // ON CONFLICT("cart_id","item_id")
+            // DO UPDATE SET "quantity" = "quantity"+ EXCLUDED."quantity"  "#;
+            match sqlx::query!(
+                r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
+                VALUES ($1,$2,$3) 
+                ON CONFLICT("cart_id","item_id")
+                DO UPDATE SET "quantity" = "cart"."quantity"+ EXCLUDED."quantity"  "#,
+                userresponse.user_id,
+                form_data.item_id,
+                form_data.quantity
+            )
+            .execute(&state.db_pool)
+            .await
+            {
+                Ok(_response) => (
+                    StatusCode::OK,
+                    Json(json!(GeneralResponse {
+                        detail: "Cart updated".to_string()
+                    })),
+                ),
+                Err(_e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(GeneralResponse {
+                        detail: "Server Error".to_string()
+                    })),
+                ),
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Credentials".to_string()
+            })),
+        ),
+    }
+}
 
 // pub async fn update_item_quantity() {}
