@@ -1,4 +1,4 @@
-use crate::user::{check_session_validity, GeneralResponse};
+use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -57,20 +57,11 @@ pub async fn create_item(
     state: State<AppState>,
     Form(form_data): Form<ItemForm>,
 ) -> impl IntoResponse {
-    let session;
-    match headers.get("session_id") {
-        Some(session_id) => session = session_id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid credentials".to_string()
-                })),
-            )
-        }
-    };
-    let session_id = Uuid::parse_str(session.to_str().unwrap()).unwrap();
-    println!("session_id is {}", session_id);
+    let session_id ;
+    match extract_session_header(headers).await{
+        Some(session) => {session_id = session},
+        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+    }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userwithsession) => {
             let query = r#"
@@ -126,19 +117,11 @@ pub async fn delete_item(
     state: State<AppState>,
     Path(item_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let session;
-    match headers.get("session_id") {
-        Some(session_id) => session = session_id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid credentials".to_string()
-                })),
-            )
-        }
-    };
-    let session_id = Uuid::parse_str(session.to_str().unwrap()).unwrap();
+    let session_id ;
+    match extract_session_header(headers).await{
+        Some(session) => {session_id = session},
+        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+    }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
             println!("{:?}", response);
@@ -202,19 +185,11 @@ pub async fn edit_item(
     Path(item_id): Path<Uuid>,
     Form(form_data): Form<ItemForm>,
 ) -> impl IntoResponse {
-    let session;
-    match headers.get("session_id") {
-        Some(session_id) => session = session_id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid credentials".to_string()
-                })),
-            )
-        }
-    };
-    let session_id = Uuid::parse_str(session.to_str().unwrap()).unwrap();
+    let session_id ;
+    match extract_session_header(headers).await{
+        Some(session) => {session_id = session},
+        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+    }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
             println!("{:?}", response);
@@ -284,19 +259,11 @@ pub async fn get_item(
     state: State<AppState>,
     Path(item_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let session;
-    match headers.get("session_id") {
-        Some(session_id) => session = session_id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid credentials".to_string()
-                })),
-            )
-        }
-    };
-    let session_id = Uuid::parse_str(session.to_str().unwrap()).unwrap();
+    let session_id ;
+    match extract_session_header(headers).await{
+        Some(session) => {session_id = session},
+        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+    }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(uresponse) => {
             let query = r#"

@@ -2,7 +2,7 @@ use crate::AppState;
 use crate::Duration;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap,StatusCode},
     response::IntoResponse,
     Form, Json,
 };
@@ -364,4 +364,14 @@ pub async fn check_session_validity(
         }),
         None => None,
     }
+}
+
+pub async fn extract_session_header(headers:HeaderMap)->Option<uuid::Uuid>{
+    let session;
+    match headers.get("session_id") {
+        Some(session_id) => {session = session_id},
+        None => return None
+    }
+    let session_id = uuid::Uuid::parse_str(session.to_str().unwrap()).unwrap();
+    return Some(session_id);
 }
