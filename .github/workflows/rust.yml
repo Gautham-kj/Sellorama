@@ -16,9 +16,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    # - name: Build
-    #   working-directory: ./backend
-    #   run: cargo build --verbose
+    - name: Sqlx Offline Mode
+      working-directory: ./backend
+      run: cargo sqlx prepare -- --all-targets --all-features
+    - name: Build
+      working-directory: ./backend
+      run: cargo build --verbose
     - name: Run tests
       working-directory: ./backend
       run: cargo test --verbose
