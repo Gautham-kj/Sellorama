@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM \"cart\" WHERE \"cart_id\" = $1 AND \"item_id\" = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f3cbffca4d4305b36605054d1cab65dfa33726de439246cad66fa77a962bf4df"
+}
