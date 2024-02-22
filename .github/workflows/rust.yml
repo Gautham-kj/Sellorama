@@ -16,9 +16,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build
-      working-directory: ./backend
-      run: cargo build --verbose
+    # - name: Build
+    #   working-directory: ./backend
+    #   run: cargo build --verbose
     - name: Run tests
       working-directory: ./backend
       run: cargo test --verbose
