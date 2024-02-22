@@ -19,24 +19,24 @@ services:
         networks:
             network1:
                 ipv4_address: 172.20.0.5
-    backend:
-        container_name: sellorama_backend
-        build:
-            context: ./backend
-            dockerfile: Dockerfile
-        depends_on:
-            database:
-                condition: service_healthy
-        develop:
-            watch:
-                - action: sync+restart
-                  path: ./backend/src
-                  target: /app/src
-        ports:
-            - 9000:9000
-        networks:
-            network1:
-                ipv4_address: 172.20.0.6
+    # backend:
+    #     container_name: sellorama_backend
+    #     build:
+    #         context: ./backend
+    #         dockerfile: Dockerfile
+    #     depends_on:
+    #         database:
+    #             condition: service_healthy
+    #     develop:
+    #         watch:
+    #             - action: sync+restart
+    #               path: ./backend/src
+    #               target: /app/src
+    #     ports:
+    #         - 9000:9000
+    #     networks:
+    #         network1:
+    #             ipv4_address: 172.20.0.6
     adminer:
         container_name: adminer
         image: adminer
