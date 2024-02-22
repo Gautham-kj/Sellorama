@@ -2,7 +2,7 @@ use crate::AppState;
 use crate::Duration;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap,StatusCode},
     response::IntoResponse,
     Form, Json,
 };
@@ -289,7 +289,7 @@ async fn create_session(
     expiry: NaiveDateTime,
 ) -> Option<Session> {
     let query = r#"
-            INSERT INTO "sessions" ("user_id","expiry") VALUES ($1,$2) RETURNING "session_id";
+            INSERT INTO "session" ("user_id","expiry") VALUES ($1,$2) RETURNING "session_id";
         "#;
 
     match sqlx::query_as::<_, Session>(query)
@@ -309,7 +309,7 @@ async fn create_session(
 #[allow(dead_code)]
 async fn invalidate_sessions_user(pool: &Pool<Postgres>, user_id: Uuid) -> Result<String, String> {
     match sqlx::query!(
-        r#"DELETE FROM "sessions" WHERE "user_id" = $1 AND expiry < CURRENT_TIMESTAMP"#,
+        r#"DELETE FROM "session" WHERE "user_id" = $1 AND expiry < CURRENT_TIMESTAMP"#,
         user_id
     )
     .execute(pool)
@@ -321,7 +321,7 @@ async fn invalidate_sessions_user(pool: &Pool<Postgres>, user_id: Uuid) -> Resul
 }
 
 async fn invalidate_dangling_sessions(pool: &Pool<Postgres>) -> Result<String, String> {
-    match sqlx::query!(r#"DELETE FROM "sessions" where  "expiry" < CURRENT_TIMESTAMP"#)
+    match sqlx::query!(r#"DELETE FROM "session" where  "expiry" < CURRENT_TIMESTAMP"#)
         .execute(pool)
         .await
     {
@@ -332,7 +332,7 @@ async fn invalidate_dangling_sessions(pool: &Pool<Postgres>) -> Result<String, S
 
 pub async fn invalidate_session(pool: &Pool<Postgres>, session_id: Uuid) -> Result<Uuid, String> {
     match sqlx::query!(
-        r#"DELETE FROM "sessions" WHERE "session_id" = $1"#,
+        r#"DELETE FROM "session" WHERE "session_id" = $1"#,
         session_id
     )
     .execute(pool)
@@ -348,7 +348,7 @@ pub async fn check_session_validity(
     session_id: Uuid,
 ) -> Option<UserWithSession> {
     let query = r#"
-            SELECT "user_id","session_id" FROM "sessions" 
+            SELECT "user_id","session_id" FROM "session" 
             WHERE 
             "session_id" = $1 AND "expiry" > CURRENT_TIMESTAMP;
         "#;
@@ -364,4 +364,14 @@ pub async fn check_session_validity(
         }),
         None => None,
     }
+}
+
+pub async fn extract_session_header(headers:HeaderMap)->Option<uuid::Uuid>{
+    let session;
+    match headers.get("session_id") {
+        Some(session_id) => {session = session_id},
+        None => return None
+    }
+    let session_id = uuid::Uuid::parse_str(session.to_str().unwrap()).unwrap();
+    return Some(session_id);
 }
