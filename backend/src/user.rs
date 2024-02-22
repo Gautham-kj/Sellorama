@@ -2,12 +2,13 @@ use crate::AppState;
 use crate::Duration;
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap,StatusCode},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Form, Json,
 };
 use base64::engine::{general_purpose, Engine};
 use chrono::{NaiveDateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{prelude::FromRow, types::chrono, Pool, Postgres};
@@ -77,12 +78,32 @@ pub async fn signup(
     state: State<AppState>,
     Form(form_data): Form<CreateUserForm>,
 ) -> impl IntoResponse {
+    if form_data.password.len() < 6 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!(GeneralResponse {
+                detail: "Password must be atleast 6 characters long".to_string()
+            })),
+        );
+    }
     let (username, email_id, db_pool, password) = (
         &form_data.username,
         &form_data.email_id,
         &state.db_pool,
         create_hashed_password(form_data.password),
     );
+    let email_regex = Regex::new(
+        r"^([a-z0-9_+]([a-z0-9_+.]*[a-z0-9_+])?)@([a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6})",
+    )
+    .unwrap();
+    if !email_regex.is_match(email_id) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Email Id".to_string()
+            })),
+        );
+    }
     let check_query = r#"
         SELECT * FROM "user" WHERE "username" = $1 OR "email_id" = $2;
         "#;
@@ -366,11 +387,11 @@ pub async fn check_session_validity(
     }
 }
 
-pub async fn extract_session_header(headers:HeaderMap)->Option<uuid::Uuid>{
+pub async fn extract_session_header(headers: HeaderMap) -> Option<uuid::Uuid> {
     let session;
     match headers.get("session_id") {
-        Some(session_id) => {session = session_id},
-        None => return None
+        Some(session_id) => session = session_id,
+        None => return None,
     }
     let session_id = uuid::Uuid::parse_str(session.to_str().unwrap()).unwrap();
     return Some(session_id);
