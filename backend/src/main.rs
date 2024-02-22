@@ -21,7 +21,7 @@ mod cart;
 mod item;
 mod user;
 
-use cart::{get_cart,add_item, Cart, CartItem, CartResponse};
+use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use item::{create_item, delete_item, edit_item, get_item, Item, ItemForm, ItemId, ItemResponse};
 use user::{
     get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
@@ -52,7 +52,8 @@ title = "Sellorama"),
         item::get_item,
         item::delete_item,
         cart::get_cart,
-        cart::add_item
+        cart::add_item,
+        cart::update_cart_item
     ),
     components(
         schemas(
@@ -128,15 +129,16 @@ async fn main() {
         .with_state(dbpool.clone());
 
     let cart_router = Router::new()
-        .route("/",get(get_cart))
-        .route("/item",post(add_item))
+        .route("/", get(get_cart))
+        .route("/item", post(add_item))
+        .route("/update", post(update_cart_item))
         .with_state(dbpool.clone());
 
     let comment_router = Router::new().with_state(dbpool.clone());
 
     let app = Router::new()
         .route("/", get(ping))
-        .nest("/cart",cart_router)
+        .nest("/cart", cart_router)
         .nest("/user", user_router)
         .nest("/item", item_router)
         .nest("/comment", comment_router)

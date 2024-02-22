@@ -1,4 +1,4 @@
-use crate::user::{check_session_validity,extract_session_header, GeneralResponse};
+use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
 use crate::AppState;
 use axum::{
     extract::State,
@@ -13,7 +13,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(FromRow, ToSchema, Deserialize,Serialize)]
+#[derive(FromRow, ToSchema, Deserialize, Serialize)]
 pub struct CartItem {
     item_id: Uuid,
     quantity: i32,
@@ -21,7 +21,7 @@ pub struct CartItem {
 
 #[derive(FromRow, ToSchema, Serialize)]
 pub struct Cart {
-    items: Vec<CartItem>
+    items: Vec<CartItem>,
 }
 
 #[derive(FromRow, ToSchema, Serialize)]
@@ -41,14 +41,18 @@ pub struct CartResponse {
         (status = 500, body = GeneralResponse)
     )
 )]
-pub async fn get_cart(
-    state: State<AppState>,
-    headers: HeaderMap, 
-) -> impl IntoResponse {
-    let session_id ;
-    match extract_session_header(headers).await{
-        Some(session) => {session_id = session},
-        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+pub async fn get_cart(state: State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(user) => {
@@ -62,9 +66,7 @@ pub async fn get_cart(
                 Ok(cart) => (
                     StatusCode::OK,
                     Json(json!(CartResponse {
-                        detail: Cart {
-                            items: cart
-                        }
+                        detail: Cart { items: cart }
                     })),
                 ),
                 Err(_e) => (
@@ -100,17 +102,20 @@ pub async fn add_item(
     state: State<AppState>,
     Form(form_data): Form<CartItem>,
 ) -> impl IntoResponse {
-    let session_id ;
-    match extract_session_header(headers).await{
-        Some(session) => {session_id = session},
-        None => {return (StatusCode::UNAUTHORIZED,Json(json!(GeneralResponse{detail:"Invalid Credentials".to_string()})))}
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userresponse) => {
-            //     let query = r#"INSERT INTO "cart" ("cart_id","item_id","quantity")
-            // VALUES ($1,$2,$3)
-            // ON CONFLICT("cart_id","item_id")
-            // DO UPDATE SET "quantity" = "quantity"+ EXCLUDED."quantity"  "#;
             match sqlx::query!(
                 r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
                 VALUES ($1,$2,$3) 
@@ -145,5 +150,89 @@ pub async fn add_item(
         ),
     }
 }
-
-// pub async fn update_item_quantity() {}
+#[utoipa::path(
+    post,
+    path = "/cart/update",
+    security(
+        ("session_id" = [])
+    ),
+    responses(
+        (status = 401, body = GeneralResponse),
+        (status = 200, body = GeneralResponse),
+        (status = 500, body = GeneralResponse)
+    )
+)]
+pub async fn update_cart_item(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<CartItem>,
+) -> impl IntoResponse {
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
+    }
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(userresponse) => {
+            if form_data.quantity > 0 {
+                match sqlx::query!(
+                    r#"UPDATE "cart" SET "quantity" = $3 WHERE "cart_id" = $1 AND "item_id" = $2"#,
+                    userresponse.user_id,
+                    form_data.item_id,
+                    form_data.quantity
+                )
+                .execute(&state.db_pool)
+                .await
+                {
+                    Ok(_response) => (
+                        StatusCode::OK,
+                        Json(json!(GeneralResponse {
+                            detail: "Cart updated".to_string()
+                        })),
+                    ),
+                    Err(_e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!(GeneralResponse {
+                            detail: "Server Error".to_string()
+                        })),
+                    ),
+                }
+            } else {
+                match sqlx::query!(
+                    r#"DELETE FROM "cart" WHERE "cart_id" = $1 AND "item_id" = $2"#,
+                    userresponse.user_id,
+                    form_data.item_id,
+                )
+                .execute(&state.db_pool)
+                .await
+                {
+                    Ok(_response) => (
+                        StatusCode::OK,
+                        Json(json!(GeneralResponse {
+                            detail: "Cart updated".to_string()
+                        })),
+                    ),
+                    Err(_e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!(GeneralResponse {
+                            detail: "Server Error".to_string()
+                        })),
+                    ),
+                }
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Credentials".to_string()
+            })),
+        ),
+    }
+}
