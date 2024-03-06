@@ -20,6 +20,13 @@ pub struct ItemForm {
     price: f32,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct RateForm {
+    rating: i32,
+    content: String,
+    item_id: Uuid,
+}
+
 #[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ItemId {
     item_id: Uuid,
@@ -330,6 +337,72 @@ pub async fn get_item(
             StatusCode::UNAUTHORIZED,
             Json(json!(GeneralResponse {
                 detail: "Inavlid credentials".to_string()
+            })),
+        ),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/item/rate",
+    responses (
+        (status = 201, body = GeneralResponse),
+        (status = 401, body = GeneralResponse),
+        (status = 100, body = GeneralResponse)
+    ),
+    security(
+        ("session_id"=[])
+    )
+)]
+pub async fn rate_item(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<RateForm>,
+) -> impl IntoResponse {
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
+    }
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user_response) => {
+            match sqlx::query!(
+                r#"INSERT INTO 
+                "comment" ("user_id","item_id","rating","content") 
+                VALUES ($1,$2,$3,$4) "#,
+                user_response.user_id,
+                form_data.item_id,
+                form_data.rating,
+                form_data.content
+            )
+            .execute(&state.db_pool)
+            .await
+            {
+                Ok(_result) => (
+                    StatusCode::CREATED,
+                    Json(json!(GeneralResponse {
+                        detail: "Comment Created".to_string()
+                    })),
+                ),
+                Err(_e) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!(GeneralResponse {
+                        detail: "Error creating comment".to_string()
+                    })),
+                ),
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Credentials".to_string()
             })),
         ),
     }
