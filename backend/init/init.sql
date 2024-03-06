@@ -30,6 +30,7 @@ CREATE TABLE "comment" (
     comment_id UUID DEFAULT UUID_generate_v4 (),
     user_id UUID,
     item_id UUID,
+    rating int NOT NULL CHECK (rating >= 0 AND rating <= 5) DEFAULT 0,
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (comment_id),
