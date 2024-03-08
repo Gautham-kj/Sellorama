@@ -38,7 +38,7 @@ pub struct Item {
     user_id: Uuid,
     title: String,
     content: String,
-    rating:Option<f32>,
+    rating: Option<f32>,
     price: f32,
 }
 

@@ -20,3 +20,4 @@ utoipa-rapidoc = {version="3.0.0",features=["axum"]}
 utoipa-redoc = {version="3.0.0",features=["axum"]}
 uuid = {version = "1.7.0",features = ["v4","serde"]}
 regex = "1.10.3"
+tower-http = {version = "0.5.2", features = ["cors"]}

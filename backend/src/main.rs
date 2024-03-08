@@ -1,9 +1,12 @@
 use dotenv::dotenv;
 
 use axum::{
+    http::Method,
     routing::{delete, get, post},
     Json, Router,
 };
+use tower_http::cors::{Any, CorsLayer};
+
 use chrono::Duration;
 use serde::Serialize;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -117,6 +120,12 @@ async fn main() {
         db_pool: pool.clone(),
     };
 
+    let cors = CorsLayer::new()
+        // allow `GET` and `POST` when accessing the resource
+        .allow_methods([Method::GET, Method::POST,Method::PUT,Method::DELETE])
+        // allow requests from any origin
+        .allow_origin(Any);
+
     let user_router = Router::new()
         .route("/login", post(user_login))
         .route("/signup", post(signup))
@@ -150,7 +159,8 @@ async fn main() {
         .nest("/comment", comment_router)
         .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
-        .merge(RapiDoc::new("/apidoc").path("/rapidoc"));
+        .merge(RapiDoc::new("/apidoc").path("/rapidoc"))
+        .layer(cors);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
