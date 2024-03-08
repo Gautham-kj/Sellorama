@@ -38,6 +38,7 @@ pub struct Item {
     user_id: Uuid,
     title: String,
     content: String,
+    rating:Option<f32>,
     price: f32,
 }
 
@@ -294,7 +295,7 @@ pub async fn get_item(
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
+                    detail: "Invalid Credentials lol".to_string()
                 })),
             )
         }
@@ -302,7 +303,10 @@ pub async fn get_item(
     match check_session_validity(&state.db_pool, session_id).await {
         Some(uresponse) => {
             let query = r#"
-            SELECT * FROM "item" WHERE "item_id" = $1;"#;
+            SELECT t1."item_id",t1."user_id",t1."title",t1."content",t1."date_created",t1."price",t2."rating" 
+            FROM (SELECT * FROM "item" WHERE "item_id"=$1) AS t1 
+            LEFT JOIN
+            (SELECT "item_id",AVG("rating")::FLOAT4 "rating" FROM "comment" GROUP BY "item_id" ) AS t2 ON t1."item_id" = t2."item_id"; "#;
             match sqlx::query_as::<_, Item>(query)
                 .bind(item_id)
                 .fetch_one(&state.db_pool)
@@ -316,7 +320,8 @@ pub async fn get_item(
                             user_id: response.user_id,
                             title: response.title,
                             content: response.content,
-                            price: response.price
+                            price: response.price,
+                            rating: response.rating
                         },
                         sameuser: if response.user_id == uresponse.user_id {
                             true
@@ -326,9 +331,9 @@ pub async fn get_item(
                     })),
                 ),
                 Err(_e) => (
-                    StatusCode::UNAUTHORIZED,
+                    StatusCode::NOT_FOUND,
                     Json(json!(GeneralResponse {
-                        detail: "Invalid credentials".to_string()
+                        detail: "Item Not Found".to_string()
                     })),
                 ),
             }
