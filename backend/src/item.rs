@@ -20,6 +20,13 @@ pub struct ItemForm {
     price: f32,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct RateForm {
+    rating: i32,
+    content: String,
+    item_id: Uuid,
+}
+
 #[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ItemId {
     item_id: Uuid,
@@ -31,6 +38,7 @@ pub struct Item {
     user_id: Uuid,
     title: String,
     content: String,
+    rating:Option<f32>,
     price: f32,
 }
 
@@ -287,7 +295,7 @@ pub async fn get_item(
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
+                    detail: "Invalid Credentials lol".to_string()
                 })),
             )
         }
@@ -295,7 +303,10 @@ pub async fn get_item(
     match check_session_validity(&state.db_pool, session_id).await {
         Some(uresponse) => {
             let query = r#"
-            SELECT * FROM "item" WHERE "item_id" = $1;"#;
+            SELECT t1."item_id",t1."user_id",t1."title",t1."content",t1."date_created",t1."price",t2."rating" 
+            FROM (SELECT * FROM "item" WHERE "item_id"=$1) AS t1 
+            LEFT JOIN
+            (SELECT "item_id",AVG("rating")::FLOAT4 "rating" FROM "comment" GROUP BY "item_id" ) AS t2 ON t1."item_id" = t2."item_id"; "#;
             match sqlx::query_as::<_, Item>(query)
                 .bind(item_id)
                 .fetch_one(&state.db_pool)
@@ -309,7 +320,8 @@ pub async fn get_item(
                             user_id: response.user_id,
                             title: response.title,
                             content: response.content,
-                            price: response.price
+                            price: response.price,
+                            rating: response.rating
                         },
                         sameuser: if response.user_id == uresponse.user_id {
                             true
@@ -319,9 +331,9 @@ pub async fn get_item(
                     })),
                 ),
                 Err(_e) => (
-                    StatusCode::UNAUTHORIZED,
+                    StatusCode::NOT_FOUND,
                     Json(json!(GeneralResponse {
-                        detail: "Invalid credentials".to_string()
+                        detail: "Item Not Found".to_string()
                     })),
                 ),
             }
@@ -330,6 +342,72 @@ pub async fn get_item(
             StatusCode::UNAUTHORIZED,
             Json(json!(GeneralResponse {
                 detail: "Inavlid credentials".to_string()
+            })),
+        ),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/item/rate",
+    responses (
+        (status = 201, body = GeneralResponse),
+        (status = 401, body = GeneralResponse),
+        (status = 100, body = GeneralResponse)
+    ),
+    security(
+        ("session_id"=[])
+    )
+)]
+pub async fn rate_item(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<RateForm>,
+) -> impl IntoResponse {
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
+    }
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user_response) => {
+            match sqlx::query!(
+                r#"INSERT INTO 
+                "comment" ("user_id","item_id","rating","content") 
+                VALUES ($1,$2,$3,$4) "#,
+                user_response.user_id,
+                form_data.item_id,
+                form_data.rating,
+                form_data.content
+            )
+            .execute(&state.db_pool)
+            .await
+            {
+                Ok(_result) => (
+                    StatusCode::CREATED,
+                    Json(json!(GeneralResponse {
+                        detail: "Comment Created".to_string()
+                    })),
+                ),
+                Err(_e) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!(GeneralResponse {
+                        detail: "Error creating comment".to_string()
+                    })),
+                ),
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Credentials".to_string()
             })),
         ),
     }

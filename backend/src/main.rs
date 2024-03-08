@@ -22,7 +22,10 @@ mod item;
 mod user;
 
 use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
-use item::{create_item, delete_item, edit_item, get_item, Item, ItemForm, ItemId, ItemResponse};
+use item::{
+    create_item, delete_item, edit_item, get_item, rate_item, Item, ItemForm, ItemId, ItemResponse,
+    RateForm,
+};
 use user::{
     get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
     SessionResponse, User, UserLogin, UserResponse, UserWithSession,
@@ -51,6 +54,7 @@ title = "Sellorama"),
         item::edit_item,
         item::get_item,
         item::delete_item,
+        item::rate_item,
         cart::get_cart,
         cart::add_item,
         cart::update_cart_item
@@ -70,6 +74,7 @@ title = "Sellorama"),
             ItemId,
             ItemForm,
             ItemResponse,
+            RateForm,
             Cart,
             CartItem,
             CartResponse
@@ -126,6 +131,7 @@ async fn main() {
             "/:item_id",
             delete(delete_item).put(edit_item).get(get_item),
         )
+        .route("/rate", post(rate_item))
         .with_state(dbpool.clone());
 
     let cart_router = Router::new()
