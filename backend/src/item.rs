@@ -1,7 +1,7 @@
 use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
 use crate::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Form, Json,
@@ -10,7 +10,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::FromRow;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(Deserialize, ToSchema)]
@@ -38,7 +38,7 @@ pub struct Item {
     user_id: Uuid,
     title: String,
     content: String,
-    rating: Option<f32>,
+    // rating: Option<f32>,
     price: f32,
 }
 
@@ -48,18 +48,29 @@ pub struct ItemResponse {
     sameuser: bool,
 }
 
+#[derive(Deserialize, ToSchema, Debug, IntoParams)]
+pub struct SearchQuery {
+    query: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SearchResult {
+    keywords: Vec<Item>,
+}
+
 #[utoipa::path(
-        post,
-        path="/item/create",
-        responses (
-            (status = 201, body = GeneralResponse),
-            (status = 401, body = GeneralResponse),
-            (status = 100, body = GeneralResponse)
-        ),
-        security(
-            ("session_id"=[])
-        )
-    )]
+    post,
+    path="/item/create",
+    responses (
+        (status = 201, body = GeneralResponse),
+        (status = 401, body = GeneralResponse),
+        (status = 100, body = GeneralResponse)
+    ),
+    security(
+        ("session_id"=[])
+    )
+)]
+///Endpoint to create an Item
 pub async fn create_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -116,17 +127,18 @@ pub async fn create_item(
 }
 
 #[utoipa::path(
-        delete,
-        path = "/item/{id}",
-        security(
-            ("session_id"=[])
-        ),
-        responses(
-            (status = 200 , body = GeneralResponse),
-            (status = 401 , body = GeneralResponse),
-            (status = 500 , body = GeneralResponse),
-        )
-    )]
+    delete,
+    path = "/item/{id}",
+    security(
+        ("session_id"=[])
+    ),
+    responses(
+        (status = 200 , body = GeneralResponse),
+        (status = 401 , body = GeneralResponse),
+        (status = 500 , body = GeneralResponse),
+    )
+)]
+///Endpoint to delete an Item
 pub async fn delete_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -190,17 +202,18 @@ pub async fn delete_item(
 
 // }
 #[utoipa::path(
-        put,
-        path = "/item/{id}",
-        security(
-            ("session_id"=[])
-        ),
-        responses(
-            (status = 200 , body = GeneralResponse),
-            (status = 401 , body = GeneralResponse),
-            (status = 500 , body = GeneralResponse),
-        )
-    )]
+    put,
+    path = "/item/{id}",
+    security(
+        ("session_id"=[])
+    ),
+    responses(
+        (status = 200 , body = GeneralResponse),
+        (status = 401 , body = GeneralResponse),
+        (status = 500 , body = GeneralResponse),
+    )
+)]
+///endpoint to edit an Item
 pub async fn edit_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -283,6 +296,7 @@ pub async fn edit_item(
         (status = 500 , body = GeneralResponse),
     )
 )]
+///Endpoint to retrieve details of an Item by id
 pub async fn get_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -295,7 +309,7 @@ pub async fn get_item(
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials lol".to_string()
+                    detail: "Invalid Credentials".to_string()
                 })),
             )
         }
@@ -321,7 +335,7 @@ pub async fn get_item(
                             title: response.title,
                             content: response.content,
                             price: response.price,
-                            rating: response.rating
+                            // rating: response.rating
                         },
                         sameuser: if response.user_id == uresponse.user_id {
                             true
@@ -359,6 +373,7 @@ pub async fn get_item(
         ("session_id"=[])
     )
 )]
+///Endpoint to rate an Item
 pub async fn rate_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -381,7 +396,8 @@ pub async fn rate_item(
             match sqlx::query!(
                 r#"INSERT INTO 
                 "comment" ("user_id","item_id","rating","content") 
-                VALUES ($1,$2,$3,$4) "#,
+                VALUES ($1,$2,$3,$4);
+                "#,
                 user_response.user_id,
                 form_data.item_id,
                 form_data.rating,
@@ -399,7 +415,7 @@ pub async fn rate_item(
                 Err(_e) => (
                     StatusCode::UNPROCESSABLE_ENTITY,
                     Json(json!(GeneralResponse {
-                        detail: "Error creating comment".to_string()
+                        detail: "Error creating comment".to_string() // detail:e.to_string()
                     })),
                 ),
             }
@@ -408,6 +424,41 @@ pub async fn rate_item(
             StatusCode::UNAUTHORIZED,
             Json(json!(GeneralResponse {
                 detail: "Invalid Credentials".to_string()
+            })),
+        ),
+    }
+}
+#[utoipa::path(
+    get,
+    path = "/item/search_suggestions",
+    params(
+        SearchQuery
+    ),
+    responses(
+        (status = 200, body = Vec<Item>)
+    )
+)]
+///Endpoint for search autocompletions
+pub async fn search_suggestions(
+    state: State<AppState>,
+    search_query: Query<SearchQuery>,
+) -> impl IntoResponse {
+    let query = r#"
+    SELECT * FROM "item" WHERE to_tsvector("title"|| ' ' ||"content") @@ to_tsquery($1);
+    "#;
+    match sqlx::query_as::<_, Item>(query)
+        .bind(&search_query.query)
+        .fetch_all(&state.db_pool)
+        .await
+    {
+        Ok(response) => (
+            StatusCode::OK,
+            Json(json!(SearchResult { keywords: response })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!(GeneralResponse {
+                detail: e.to_string()
             })),
         ),
     }
