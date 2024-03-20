@@ -22,6 +22,7 @@ CREATE TABLE "item" (
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
     price real NOT NULL,
+    rating real DEFAULT NULL,
     PRIMARY KEY (item_id),
     FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE
 );
@@ -33,7 +34,7 @@ CREATE TABLE "comment" (
     rating int NOT NULL CHECK (rating >= 0 AND rating <= 5) DEFAULT 0,
     content text NOT NULL,
     date_created timestamp DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (comment_id),
+    PRIMARY KEY (user_id,item_id),
     FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES "item" (item_id) ON DELETE CASCADE
 );

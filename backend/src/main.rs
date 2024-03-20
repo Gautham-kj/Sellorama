@@ -26,8 +26,8 @@ mod user;
 
 use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use item::{
-    create_item, delete_item, edit_item, get_item, rate_item, Item, ItemForm, ItemId, ItemResponse,
-    RateForm,
+    create_item, delete_item, edit_item, get_item, rate_item, search_suggestions, Item, ItemForm,
+    ItemId, ItemResponse, RateForm, SearchQuery, SearchResult,
 };
 use user::{
     get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
@@ -58,6 +58,7 @@ title = "Sellorama"),
         item::get_item,
         item::delete_item,
         item::rate_item,
+        item::search_suggestions,
         cart::get_cart,
         cart::add_item,
         cart::update_cart_item
@@ -77,6 +78,8 @@ title = "Sellorama"),
             ItemId,
             ItemForm,
             ItemResponse,
+            SearchQuery,
+            SearchResult,
             RateForm,
             Cart,
             CartItem,
@@ -122,7 +125,7 @@ async fn main() {
 
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
-        .allow_methods([Method::GET, Method::POST,Method::PUT,Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         // allow requests from any origin
         .allow_origin(Any);
 
@@ -140,6 +143,7 @@ async fn main() {
             "/:item_id",
             delete(delete_item).put(edit_item).get(get_item),
         )
+        .route("/search_suggestions", get(search_suggestions))
         .route("/rate", post(rate_item))
         .with_state(dbpool.clone());
 
@@ -149,14 +153,13 @@ async fn main() {
         .route("/update", post(update_cart_item))
         .with_state(dbpool.clone());
 
-    let comment_router = Router::new().with_state(dbpool.clone());
+    // let comment_router = Router::new().with_state(dbpool.clone());
 
     let app = Router::new()
         .route("/", get(ping))
         .nest("/cart", cart_router)
         .nest("/user", user_router)
         .nest("/item", item_router)
-        .nest("/comment", comment_router)
         .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"))
