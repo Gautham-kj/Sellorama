@@ -116,6 +116,7 @@ pub async fn add_item(
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userresponse) => {
+            //create plsql function to check and return stock issues
             match sqlx::query!(
                 r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
                 VALUES ($1,$2,$3) 

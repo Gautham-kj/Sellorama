@@ -26,8 +26,8 @@ mod user;
 
 use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use item::{
-    create_item, delete_item, edit_item, get_item, rate_item, search_suggestions, Item, ItemForm,
-    ItemId, ItemResponse, RateForm, SearchQuery, SearchResult,
+    create_item, delete_item, edit_item, edit_stock, get_item, rate_item, search_suggestions, Item,
+    ItemForm, ItemId, ItemResponse, ItemStock, RateForm, SearchQuery, SearchResult,
 };
 use user::{
     get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
@@ -58,6 +58,7 @@ title = "Sellorama"),
         item::get_item,
         item::delete_item,
         item::rate_item,
+        item::edit_stock,
         item::search_suggestions,
         cart::get_cart,
         cart::add_item,
@@ -78,6 +79,7 @@ title = "Sellorama"),
             ItemId,
             ItemForm,
             ItemResponse,
+            ItemStock,
             SearchQuery,
             SearchResult,
             RateForm,
@@ -143,6 +145,7 @@ async fn main() {
             "/:item_id",
             delete(delete_item).put(edit_item).get(get_item),
         )
+        .route("/stock", post(edit_stock))
         .route("/search_suggestions", get(search_suggestions))
         .route("/rate", post(rate_item))
         .with_state(dbpool.clone());
