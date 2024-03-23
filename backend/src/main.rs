@@ -110,6 +110,7 @@ async fn main() {
     dotenv().ok();
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let api_url = std::env::var("API_URL").expect("API_URL must be set");
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
@@ -168,7 +169,9 @@ async fn main() {
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"))
         .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(api_url)
+        .await
+        .unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -186,4 +189,10 @@ async fn ping() -> Json<Ping> {
     };
     let response = Json(ping);
     response
+}
+
+
+#[tokio::test]
+async fn user_login_test(){
+    
 }
