@@ -38,8 +38,9 @@ pub struct Item {
     user_id: Uuid,
     title: String,
     content: String,
-    // rating: Option<f32>,
+    rating: Option<f32>,
     price: f32,
+    stock: Option<i32>
 }
 
 #[derive(Deserialize, Serialize, FromRow, ToSchema)]
@@ -201,12 +202,6 @@ pub async fn delete_item(
     }
 }
 
-// pub async fn get_items_of_user(
-//     state: State<AppState>,
-//     Path(user_id):Path<Uuid>
-// ) -> impl IntoResponse{
-
-// }
 #[utoipa::path(
     put,
     path = "/item/{id}",
@@ -322,11 +317,13 @@ pub async fn get_item(
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(uresponse) => {
-            let query = r#"
-            SELECT t1."item_id",t1."user_id",t1."title",t1."content",t1."date_created",t1."price",t2."rating" 
-            FROM (SELECT * FROM "item" WHERE "item_id"=$1) AS t1 
+            let query = r#"SELECT t1.item_id, t1.user_id,t1.title,t1.content,t1.price,t1.rating,t2.stock 
+            FROM 
+            (SELECT * FROM "item" WHERE "item_id"= $1) AS t1 
             LEFT JOIN
-            (SELECT "item_id",AVG("rating")::FLOAT4 "rating" FROM "comment" GROUP BY "item_id" ) AS t2 ON t1."item_id" = t2."item_id"; "#;
+            (SELECT "item_id","quantity" as stock FROM "stock" WHERE "item_id" = $1) AS t2 
+            ON 
+            t1."item_id" = t2."item_id""#;
             match sqlx::query_as::<_, Item>(query)
                 .bind(item_id)
                 .fetch_one(&state.db_pool)
@@ -341,7 +338,8 @@ pub async fn get_item(
                             title: response.title,
                             content: response.content,
                             price: response.price,
-                            // rating: response.rating
+                            rating: response.rating,
+                            stock:response.stock
                         },
                         sameuser: if response.user_id == uresponse.user_id {
                             true
@@ -350,10 +348,10 @@ pub async fn get_item(
                         }
                     })),
                 ),
-                Err(_e) => (
+                Err(e) => (
                     StatusCode::NOT_FOUND,
                     Json(json!(GeneralResponse {
-                        detail: "Item Not Found".to_string()
+                        detail: e.to_string()
                     })),
                 ),
             }
