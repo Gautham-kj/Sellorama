@@ -42,6 +42,12 @@ pub struct Item {
     price: f32,
 }
 
+#[derive(Deserialize, Serialize, FromRow, ToSchema)]
+pub struct ItemStock {
+    item_id: Uuid,
+    quantity: i32,
+}
+
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ItemResponse {
     detail: Item,
@@ -428,6 +434,83 @@ pub async fn rate_item(
         ),
     }
 }
+
+#[utoipa::path(
+    post,
+    path = "/item/stock",
+    security(
+        ("session_id" = [])
+    ),
+    responses(
+        (status = 200 , body = GeneralResponse),
+        (status = 401 , body = GeneralResponse),
+        (status = 404 , body = GeneralResponse),
+        (status = 500 , body = GeneralResponse)
+    )
+)]
+///Update Stock for an Item
+pub async fn edit_stock(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<ItemStock>,
+) -> impl IntoResponse {
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
+    }
+    match check_session_validity(&state.db_pool, session_id).await {
+        // create plsql function to check if item actually belongs to user
+        Some(user_response) => {
+            let query = r#"INSERT INTO "stock" ("item_id","quantity") 
+            SELECT $1,$2  WHERE item_ownership($1,$3) IS TRUE 
+            ON CONFLICT("item_id")
+            DO UPDATE SET "quantity" = EXCLUDED."quantity" RETURNING "item_id","quantity""#;
+            match sqlx::query_as::<_, ItemStock>(query)
+                .bind(&form_data.item_id)
+                .bind(&form_data.quantity)
+                .bind(user_response.user_id)
+                .fetch_optional(&state.db_pool)
+                .await
+            {
+                Ok(response) => match response {
+                    Some(_t) => (
+                        StatusCode::CREATED,
+                        Json(json!(GeneralResponse {
+                            detail: "Stock updated".to_string(),
+                        })),
+                    ),
+                    None => (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!(GeneralResponse {
+                            detail: "Invalid Credentials".to_string(),
+                        })),
+                    ),
+                },
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(GeneralResponse {
+                        detail: e.to_string(),
+                    })),
+                ),
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Credentials".to_string()
+            })),
+        ),
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/item/search_suggestions",
