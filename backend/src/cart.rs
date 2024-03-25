@@ -42,7 +42,7 @@ pub struct CartResponse {
     )
 )]
 /// Get Cart
-/// 
+///
 /// Endpoint to get all items in a user's cart
 pub async fn get_cart(state: State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let session_id;
@@ -120,34 +120,37 @@ pub async fn add_item(
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userresponse) => {
             //create plsql function to check and return stock issues
-            let query =r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
+            let query = r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
             SELECT $1,$2,$3 WHERE stock_validation($2,$3) IS TRUE
             ON CONFLICT("cart_id","item_id")
             DO UPDATE SET "quantity" = EXCLUDED."quantity" RETURNING "item_id","quantity""#;
-            match sqlx::query_as::<_,CartItem>(query)
-            .bind(userresponse.user_id)
-            .bind(form_data.item_id)
-            .bind(form_data.quantity)
-            .fetch_optional(&state.db_pool)
-            .await
+            match sqlx::query_as::<_, CartItem>(query)
+                .bind(userresponse.user_id)
+                .bind(form_data.item_id)
+                .bind(form_data.quantity)
+                .fetch_optional(&state.db_pool)
+                .await
             {
-                Ok(response) => {
-                    match response {
-                        Some(_t) =>{(StatusCode::OK,
-                            Json(json!(GeneralResponse {
-                                detail: "Item Added to cart".to_string()
-                            })))},
-                        None => {(StatusCode::CONFLICT,
-                            Json(json!(GeneralResponse {
-                                detail: "Not added to cart".to_string()
-                            })))}
-                    }
+                Ok(response) => match response {
+                    Some(_t) => (
+                        StatusCode::OK,
+                        Json(json!(GeneralResponse {
+                            detail: "Item Added to cart".to_string()
+                        })),
+                    ),
+                    None => (
+                        StatusCode::CONFLICT,
+                        Json(json!(GeneralResponse {
+                            detail: "Not added to cart".to_string()
+                        })),
+                    ),
                 },
-                Err(e) => 
-                    (StatusCode::OK,
+                Err(e) => (
+                    StatusCode::OK,
                     Json(json!(GeneralResponse {
                         detail: e.to_string()
-                    })))
+                    })),
+                ),
             }
         }
         None => (
@@ -191,30 +194,27 @@ pub async fn update_cart_item(
         Some(userresponse) => {
             if form_data.quantity > 0 {
                 let query = r#"UPDATE "cart" SET "quantity" = $3 WHERE "cart_id" = $1 AND "item_id" = $2 AND stock_validation($2,$3) IS TRUE RETURNING "item_id","quantity""#;
-                match sqlx::query_as::<_,CartItem>(
-                    query
-                )
-                .bind(userresponse.user_id)
-                .bind(form_data.item_id)
-                .bind(form_data.quantity)
-                .fetch_optional(&state.db_pool)
-                .await
+                match sqlx::query_as::<_, CartItem>(query)
+                    .bind(userresponse.user_id)
+                    .bind(form_data.item_id)
+                    .bind(form_data.quantity)
+                    .fetch_optional(&state.db_pool)
+                    .await
                 {
-                    Ok(response) => {
-                        match response {
-                            Some(_t)=>(
-                                StatusCode::OK,
-                                Json(json!(GeneralResponse {
-                                    detail: "Cart updated".to_string()
-                                })),
-                            ),
+                    Ok(response) => match response {
+                        Some(_t) => (
+                            StatusCode::OK,
+                            Json(json!(GeneralResponse {
+                                detail: "Cart updated".to_string()
+                            })),
+                        ),
                         None => (
                             StatusCode::OK,
                             Json(json!(GeneralResponse {
                                 detail: "Cart Not Updated".to_string()
                             })),
-                        ),}
-                    }
+                        ),
+                    },
                     Err(_e) => (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!(GeneralResponse {

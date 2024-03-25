@@ -169,9 +169,7 @@ async fn main() {
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"))
         .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind(api_url)
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind(api_url).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -191,8 +189,5 @@ async fn ping() -> Json<Ping> {
     response
 }
 
-
 #[tokio::test]
-async fn user_login_test(){
-    
-}
+async fn user_login_test() {}
