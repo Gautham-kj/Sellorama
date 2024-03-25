@@ -40,7 +40,7 @@ pub struct Item {
     content: String,
     rating: Option<f32>,
     price: f32,
-    stock: Option<i32>
+    stock: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize, FromRow, ToSchema)]
@@ -339,7 +339,7 @@ pub async fn get_item(
                             content: response.content,
                             price: response.price,
                             rating: response.rating,
-                            stock:response.stock
+                            stock: response.stock
                         },
                         sameuser: if response.user_id == uresponse.user_id {
                             true
@@ -397,29 +397,36 @@ pub async fn rate_item(
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(user_response) => {
-            match sqlx::query!(
-                r#"INSERT INTO 
-                "comment" ("user_id","item_id","rating","content") 
-                VALUES ($1,$2,$3,$4);
-                "#,
-                user_response.user_id,
-                form_data.item_id,
-                form_data.rating,
-                form_data.content
-            )
-            .execute(&state.db_pool)
-            .await
+            let query = r#"INSERT INTO 
+            "comment" ("user_id","item_id","rating","content") 
+            SELECT $1,$2,$3,$4 WHERE item_ownership($2,$1) IS FALSE RETURNING "item_id";
+            "#;
+            match sqlx::query_as::<_, ItemId>(query)
+                .bind(user_response.user_id)
+                .bind(form_data.item_id)
+                .bind(form_data.rating)
+                .bind(form_data.content)
+                .fetch_optional(&state.db_pool)
+                .await
             {
-                Ok(_result) => (
-                    StatusCode::CREATED,
-                    Json(json!(GeneralResponse {
-                        detail: "Comment Created".to_string()
-                    })),
-                ),
+                Ok(result) => match result {
+                    Some(_t) => (
+                        StatusCode::CREATED,
+                        Json(json!(GeneralResponse {
+                            detail: "Comment Created".to_string()
+                        })),
+                    ),
+                    None => (
+                        StatusCode::CONFLICT,
+                        Json(json!(GeneralResponse {
+                            detail: "Cannot rate one's own item".to_string()
+                        })),
+                    ),
+                },
                 Err(_e) => (
                     StatusCode::UNPROCESSABLE_ENTITY,
                     Json(json!(GeneralResponse {
-                        detail: "Error creating comment".to_string() // detail:e.to_string()
+                        detail: "Error creating comment".to_string() //
                     })),
                 ),
             }
