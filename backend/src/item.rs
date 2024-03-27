@@ -1,5 +1,7 @@
-use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
-use crate::AppState;
+use crate::{
+    user::{check_session_validity, extract_session_header, GeneralResponse},
+    AppState, Filters, Order,
+};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -12,6 +14,20 @@ use serde_json::json;
 use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+#[derive(Deserialize, ToSchema, IntoParams)]
+pub struct ItemsQuery {
+    /// Number of items to fetch per page
+    take: Option<u32>,
+    /// Page number to fetch
+    page_no: Option<u32>,
+    /// The Filter should be of either Price(Order), Rating(Order), DateOfCreation(Order), Alphabetic(Order)
+    ///
+    /// The Order should be either Inc or Dec
+    filter: Option<Filters>,
+    /// Search String to filter items
+    search_string: Option<String>,
+}
 
 #[derive(Deserialize, ToSchema)]
 pub struct ItemForm {
@@ -53,6 +69,11 @@ pub struct ItemStock {
 pub struct ItemResponse {
     detail: Item,
     sameuser: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PageResponse {
+    items: Vec<Item>,
 }
 
 #[derive(Deserialize, ToSchema, Debug, IntoParams)]
@@ -297,6 +318,8 @@ pub async fn edit_item(
         (status = 500 , body = GeneralResponse),
     )
 )]
+///Get Item By Id
+///
 ///Endpoint to retrieve details of an Item by id
 pub async fn get_item(
     headers: HeaderMap,
@@ -360,6 +383,39 @@ pub async fn get_item(
             StatusCode::UNAUTHORIZED,
             Json(json!(GeneralResponse {
                 detail: "Inavlid credentials".to_string()
+            })),
+        ),
+    }
+}
+
+///Get items by filter
+///
+/// Endpoint to get multiple items by page
+#[utoipa::path(
+    get,
+    path = "/item",
+    params(
+        ItemsQuery
+    ),
+    responses (
+        (status = 200, body = GeneralResponse),
+        (status = 500, body = GeneralResponse)
+    )
+)]
+pub async fn get_items(
+    state: State<AppState>,
+    Query(pagination): Query<ItemsQuery>,
+) -> impl IntoResponse {
+    let query = paginate_items(pagination);
+    match sqlx::query_as::<_, Item>(query.as_str())
+        .fetch_all(&state.db_pool)
+        .await
+    {
+        Ok(result) => (StatusCode::OK, Json(json!(PageResponse { items: result }))),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(json!(GeneralResponse {
+                detail: e.to_string()
             })),
         ),
     }
@@ -550,4 +606,117 @@ pub async fn search_suggestions(
             })),
         ),
     }
+}
+
+fn paginate_items(pagination: ItemsQuery) -> String {
+    struct PaginationParams {
+        take: u32,
+        offset: u32,
+    }
+    let mut query_params = PaginationParams {
+        take: 10,
+        offset: 0,
+    };
+    // Setting default values for the pagination
+    match pagination.take {
+        Some(take) => query_params.take = take,
+        None => query_params.take = 10,
+    }
+    match pagination.page_no {
+        Some(page_no) => {
+            query_params.offset = if page_no > 0 {
+                (page_no - 1) * query_params.take
+            } else {
+                0
+            }
+        }
+        None => query_params.offset = 0,
+    }
+    let mut query = r#"SELECT * FROM "item""#.to_owned();
+    let pagination_query = format!("LIMIT {} OFFSET {}", query_params.take, query_params.offset);
+    let search_token;
+    match pagination.search_string {
+        Some(token) => {
+            search_token = format!(
+                r#"WHERE to_tsvector("title"|| ' ' ||"content") @@ websearch_to_tsquery('english','{}')"#,
+                token
+            )
+            .to_owned();
+        }
+        None => search_token = r#""#.to_owned(),
+    }
+    match pagination.filter {
+        Some(filter_type) => match filter_type {
+            Filters::Alphabetical(order) => match order {
+                Order::Inc => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "title" ASC "#, pagination_query
+                    )
+                }
+                Order::Dec => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "title" DESC "#, pagination_query
+                    )
+                }
+            },
+            Filters::DateOfCreation(order) => match order {
+                Order::Inc => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "date_created" ASC "#, pagination_query
+                    )
+                }
+                Order::Dec => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "date_created" DESC "#, pagination_query
+                    )
+                }
+            },
+            Filters::Rating(order) => match order {
+                Order::Inc => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "rating" ASC "#, pagination_query
+                    )
+                }
+                Order::Dec => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query,
+                        search_token,
+                        r#"ORDER BY "rating" DESC NULLS LAST"#,
+                        pagination_query
+                    )
+                }
+            },
+            Filters::Price(order) => match order {
+                Order::Inc => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "price" ASC "#, pagination_query
+                    )
+                }
+                Order::Dec => {
+                    query = format!(
+                        "{} {} {} {}",
+                        query, search_token, r#"ORDER BY "price" DESC "#, pagination_query
+                    )
+                }
+            },
+        },
+        None => query = format!("{} {} {} ", query, search_token, pagination_query),
+    }
+    query = format!(
+        r#"SELECT 
+        t1.item_id, t1.user_id,t1.title,t1.content,t1.price,t1.rating,t2.stock 
+         FROM ({}) AS t1 
+         LEFT JOIN 
+         ( SELECT "item_id","quantity" as stock from "stock") AS t2 
+         ON t1."item_id" = t2."item_id" "#,
+        query
+    );
+    return query;
 }
