@@ -8,7 +8,7 @@ use axum::{
 use tower_http::cors::{Any, CorsLayer};
 
 use chrono::Duration;
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use utoipa::ToSchema;
 
@@ -26,13 +26,50 @@ mod user;
 
 use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use item::{
-    create_item, delete_item, edit_item, edit_stock, get_item, rate_item, search_suggestions, Item,
-    ItemForm, ItemId, ItemResponse, ItemStock, RateForm, SearchQuery, SearchResult,
+    create_item, delete_item, edit_item, edit_stock, get_item, get_items, rate_item,
+    search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
+    SearchQuery, SearchResult,
 };
 use user::{
     get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
     SessionResponse, User, UserLogin, UserResponse, UserWithSession,
 };
+
+#[derive(Deserialize, PartialEq, ToSchema)]
+pub enum Order {
+    Inc,
+    Dec,
+}
+#[derive(PartialEq, ToSchema)]
+pub enum Filters {
+    Rating(Order),
+    DateOfCreation(Order),
+    Alphabetical(Order),
+    Price(Order),
+}
+
+impl<'de> Deserialize<'de> for Filters {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = String::deserialize(deserializer)?;
+        match input.as_str() {
+            "Rating" => Ok(Filters::Rating(Order::Inc)),
+            "Rating(Inc)" => Ok(Filters::Rating(Order::Inc)),
+            "Rating(Dec)" => Ok(Filters::Rating(Order::Dec)),
+            "DateOfCreation(Inc)" => Ok(Filters::DateOfCreation(Order::Inc)),
+            "DateOfCreation(Dec)" => Ok(Filters::DateOfCreation(Order::Dec)),
+            "Alphabetical" => Ok(Filters::Alphabetical(Order::Inc)),
+            "Alphabetical(Inc)" => Ok(Filters::Alphabetical(Order::Inc)),
+            "Alphabetical(Dec)" => Ok(Filters::Alphabetical(Order::Dec)),
+            "Price" => Ok(Filters::Price(Order::Inc)),
+            "Price(Inc)" => Ok(Filters::Price(Order::Inc)),
+            "Price(Dec)" => Ok(Filters::Price(Order::Dec)),
+            _ => Err(serde::de::Error::custom("Invalid value")),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -56,6 +93,7 @@ title = "Sellorama"),
         item::create_item,
         item::edit_item,
         item::get_item,
+        item::get_items,
         item::delete_item,
         item::rate_item,
         item::edit_stock,
@@ -80,12 +118,14 @@ title = "Sellorama"),
             ItemForm,
             ItemResponse,
             ItemStock,
+            PageResponse,
             SearchQuery,
             SearchResult,
             RateForm,
             Cart,
             CartItem,
-            CartResponse
+            CartResponse,
+            Filters,Order
         )
     ),
     modifiers(&SecurityAddon)
@@ -146,6 +186,7 @@ async fn main() {
             "/:item_id",
             delete(delete_item).put(edit_item).get(get_item),
         )
+        .route("/", get(get_items))
         .route("/stock", post(edit_stock))
         .route("/search_suggestions", get(search_suggestions))
         .route("/rate", post(rate_item))
