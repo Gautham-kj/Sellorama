@@ -55,3 +55,25 @@ pub async fn get_s3_client(region: String, credentials: S3Credentials) -> Result
     Ok(client)
 }
 
+pub async fn get_presigned_url(
+    client: &Client,
+    bucket: &str,
+    object: &str,
+    expires_in: u64,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let expires_in = std::time::Duration::from_secs(expires_in);
+    let presigned_request = client
+        .get_object()
+        .bucket(bucket)
+        .key(object)
+        .presigned(aws_sdk_s3::presigning::PresigningConfig::expires_in(
+            expires_in,
+        )?)
+        .await?;
+
+    // println!("Object URI: {}", presigned_request.uri());
+
+    Ok(presigned_request.uri().to_owned())
+}
+
+// pub async fn put_multipart_object{}
