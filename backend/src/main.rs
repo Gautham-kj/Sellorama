@@ -22,6 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 mod cart;
 mod item;
+mod objects;
 mod user;
 
 use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
@@ -74,6 +75,7 @@ impl<'de> Deserialize<'de> for Filters {
 #[derive(Clone)]
 pub struct AppState {
     db_pool: Pool<Postgres>,
+    s3_client: aws_sdk_s3::Client,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -149,8 +151,28 @@ impl Modify for SecurityAddon {
 async fn main() {
     dotenv().ok();
 
+    // Getting env variables
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let api_url = std::env::var("API_URL").expect("API_URL must be set");
+    // Getting S3 env variables
+    let s3_access_key = std::env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY must be set");
+    let s3_secret_access_key =
+        std::env::var("AWS_SECRET_ACCESS_KEY").expect("AWS_SECRET_KEY must be set");
+    let s3_endpoint_url = std::env::var("AWS_ENDPOINT_URL").expect("AWS_ENDPOINT_URL must be set");
+    let s3_region = std::env::var("AWS_REGION").expect("AWS_REGION must be set");
+
+    let s3_credentials = objects::S3Credentials::new(
+        s3_access_key,
+        s3_secret_access_key,
+        None,
+        None,
+        s3_endpoint_url,
+    );
+
+    let s3_client = objects::get_s3_client(s3_region.to_owned(), s3_credentials)
+        .await
+        .unwrap();
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
@@ -162,8 +184,9 @@ async fn main() {
         Ok(_) => (),
     };
 
-    let dbpool = AppState {
+    let appstate = AppState {
         db_pool: pool.clone(),
+        s3_client: s3_client.clone(),
     };
 
     let cors = CorsLayer::new()
@@ -177,10 +200,9 @@ async fn main() {
         .route("/signup", post(signup))
         .route("/logout", post(logout))
         .route("/:username", get(get_user_by_id))
-        .with_state(dbpool.clone());
+        .with_state(appstate.clone());
 
     let item_router = Router::new()
-        .with_state(dbpool.clone())
         .route("/create", post(create_item))
         .route(
             "/:item_id",
@@ -190,13 +212,13 @@ async fn main() {
         .route("/stock", post(edit_stock))
         .route("/search_suggestions", get(search_suggestions))
         .route("/rate", post(rate_item))
-        .with_state(dbpool.clone());
+        .with_state(appstate.clone());
 
     let cart_router = Router::new()
         .route("/", get(get_cart))
         .route("/item", post(add_item))
         .route("/update", post(update_cart_item))
-        .with_state(dbpool.clone());
+        .with_state(appstate.clone());
 
     // let comment_router = Router::new().with_state(dbpool.clone());
 
