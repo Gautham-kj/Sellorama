@@ -123,7 +123,7 @@ pub async fn create_item(
 
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userwithsession) => {
-            let mut txn = &state.db_pool.begin().await.unwrap();
+            let mut txn = state.db_pool.begin().await.unwrap();
 
             let mut form_data = ItemForm {
                 title: "".to_string(),
@@ -152,17 +152,73 @@ pub async fn create_item(
                 _ => form_data.item_media = Some(item_media),
             }
 
-
-
-
-
-            
-            (
-                StatusCode::CREATED,
-                Json(json!(GeneralResponse {
-                    detail: "Item Created".to_string()
-                })),
+            // let item_query = r#"
+            //         INSERT INTO "item" ("user_id","title","content","price")
+            //         VALUES ($1,$2,$3,$4) returning "item_id";
+            //     "#;
+            match sqlx::query_as::<_, ItemId>(
+                r#"
+                INSERT INTO "item" ("user_id","title","content","price")
+                VALUES ($1,$2,$3,$4) returning "item_id"#,
             )
+            .fetch_optional(&mut *txn)
+            .await
+            .unwrap()
+            {
+                Some(item_response) => match form_data.item_media {
+                    Some(media) => {
+                        let mut media_ids:Vec<Uuid> = vec![];
+                        for _media_item in media{
+                            media_ids.push(Uuid::new_v4());
+                        }
+                        let media_query = r#"
+                            (INSERT INTO "media" ("media_id","item_id")
+                            SELECT * FROM UNNEST($1::uuid[]),$2) RETURNING "item_id" ;
+                        "#;
+                        match sqlx::query_as::<_,ItemId>(media_query)
+                            .bind(media_ids)
+                            .bind(item_response.item_id)
+                            .fetch_optional(&mut *txn)
+                            .await
+                            .unwrap()
+                        {
+                            Some(_response) => {
+                                return (
+                                    StatusCode::CREATED,
+                                    Json(json!(GeneralResponse {
+                                        detail: "Item Created".to_string()
+                                    })),
+                                );
+                                txn.commit().await.unwrap();
+                            }
+                            None => {
+                                txn.rollback().await.unwrap();
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!(GeneralResponse {
+                                        detail: "Error Creating Item".to_string()
+                                    })),
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        txn.commit().await.unwrap();
+                        return (
+                            StatusCode::CREATED,
+                            Json(json!(GeneralResponse {
+                                detail: "Item Created".to_string()
+                            })),
+                        );
+                    }
+                },
+                None => (
+                    StatusCode::NOT_FOUND,
+                    Json(json!(GeneralResponse {
+                        detail: "Could not make Item".to_string()
+                    })),
+                ),
+            }
         }
         None => (
             StatusCode::UNAUTHORIZED,
