@@ -3,7 +3,7 @@ use crate::{
     AppState, Filters, Order,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Form, Json,
@@ -29,11 +29,12 @@ pub struct ItemsQuery {
     search_string: Option<String>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ItemForm {
     title: String,
     content: String,
     price: f32,
+    item_media: Option<Vec<Vec<u8>>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -94,6 +95,7 @@ pub struct SearchResult {
         (status = 401, body = GeneralResponse),
         (status = 100, body = GeneralResponse)
     ),
+    request_body(content_type = "multipart/form-data", content = ItemForm),
     security(
         ("session_id"=[])
     )
@@ -102,7 +104,8 @@ pub struct SearchResult {
 pub async fn create_item(
     headers: HeaderMap,
     state: State<AppState>,
-    Form(form_data): Form<ItemForm>,
+    // Form(form_data): Form<ItemForm>,
+    mut multipart: Multipart,
 ) -> impl IntoResponse {
     let session_id;
     match extract_session_header(headers).await {
@@ -116,34 +119,50 @@ pub async fn create_item(
             )
         }
     }
+    //multipart form handling
+
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userwithsession) => {
-            let query = r#"
-                    INSERT INTO "item" ("user_id","title","content","price") 
-                    VALUES ($1,$2,$3,$4) returning "item_id";
-                "#;
-            match sqlx::query_as::<_, ItemId>(query)
-                .bind(userwithsession.user_id)
-                .bind(&form_data.title)
-                .bind(&form_data.content)
-                .bind(&form_data.price)
-                .fetch_optional(&state.db_pool)
-                .await
-                .unwrap()
-            {
-                Some(_response) => (
-                    StatusCode::CREATED,
-                    Json(json!(GeneralResponse {
-                        detail: "Item Created".to_string()
-                    })),
-                ),
-                None => (
-                    StatusCode::NOT_FOUND,
-                    Json(json!(GeneralResponse {
-                        detail: "Could not make Item".to_string()
-                    })),
-                ),
+            let mut txn = &state.db_pool.begin().await.unwrap();
+
+            let mut form_data = ItemForm {
+                title: "".to_string(),
+                content: "".to_string(),
+                price: 0.0,
+                item_media: None,
+            };
+
+            let mut item_media: Vec<Vec<u8>> = vec![];
+
+            while let Some(field) = multipart.next_field().await.unwrap() {
+                let name = field.name().unwrap().to_owned();
+                let data = field.bytes().await.unwrap().to_vec();
+
+                match name.as_str() {
+                    "title" => form_data.title = String::from_utf8(data).unwrap(),
+                    "content" => form_data.content = String::from_utf8(data).unwrap(),
+                    "price" => form_data.price = String::from_utf8(data).unwrap().parse().unwrap(),
+                    "item_media" => item_media.push(data),
+                    _ => (),
+                }
             }
+
+            match item_media.len() {
+                0 => form_data.item_media = None,
+                _ => form_data.item_media = Some(item_media),
+            }
+
+
+
+
+
+            
+            (
+                StatusCode::CREATED,
+                Json(json!(GeneralResponse {
+                    detail: "Item Created".to_string()
+                })),
+            )
         }
         None => (
             StatusCode::UNAUTHORIZED,
@@ -152,6 +171,76 @@ pub async fn create_item(
             })),
         ),
     }
+    // let mut txn = &state.db_pool.begin().await.unwrap();
+
+    // let mut form_data = ItemForm {
+    //     title: "".to_string(),
+    //     content: "".to_string(),
+    //     price: 0.0,
+    //     item_media: None,
+    // };
+
+    // let mut item_media: Vec<Vec<u8>> = vec![];
+    // while let Some(field) = multipart.next_field().await.unwrap() {
+    //     let name = field.name().unwrap().to_owned();
+    //     let data = field.bytes().await.unwrap().to_vec();
+
+    //     match name.as_str() {
+    //         "title" => form_data.title = String::from_utf8(data).unwrap(),
+    //         "content" => form_data.content = String::from_utf8(data).unwrap(),
+    //         "price" => form_data.price = String::from_utf8(data).unwrap().parse().unwrap(),
+    //         "item_media" => item_media.push(data),
+    //         _ => (),
+    //     }
+    // }
+    // match item_media.len() {
+    //     0 => form_data.item_media = None,
+    //     _ => form_data.item_media = Some(item_media),
+    // }
+
+    // (
+    //     StatusCode::CREATED,
+    //     Json(json!(GeneralResponse {
+    //         detail: "Item Created".to_string()
+    //     })),
+    // )
+
+    // match check_session_validity(&state.db_pool, session_id).await {
+    //     Some(userwithsession) => {
+    //         let query = r#"
+    //                 INSERT INTO "item" ("user_id","title","content","price")
+    //                 VALUES ($1,$2,$3,$4) returning "item_id";
+    //             "#;
+    //         match sqlx::query_as::<_, ItemId>(query)
+    //             .bind(userwithsession.user_id)
+    //             .bind(&form_data.title)
+    //             .bind(&form_data.content)
+    //             .bind(&form_data.price)
+    //             .fetch_optional(&state.db_pool)
+    //             .await
+    //             .unwrap()
+    //         {
+    //             Some(_response) => (
+    //                 StatusCode::CREATED,
+    //                 Json(json!(GeneralResponse {
+    //                     detail: "Item Created".to_string()
+    //                 })),
+    //             ),
+    //             None => (
+    //                 StatusCode::NOT_FOUND,
+    //                 Json(json!(GeneralResponse {
+    //                     detail: "Could not make Item".to_string()
+    //                 })),
+    //             ),
+    //         }
+    //     }
+    //     None => (
+    //         StatusCode::UNAUTHORIZED,
+    //         Json(json!(GeneralResponse {
+    //             detail: "session expired or does not exist".to_string()
+    //         })),
+    //     ),
+    // }
 }
 
 #[utoipa::path(

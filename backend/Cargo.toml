@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 #http server
-axum = {version = "0.7.4",features = []}
+axum = {version = "0.7.4",features = ["multipart"]}
 tokio = {version= "1.36.0",features =["rt-multi-thread"]}
 
 #database connection
