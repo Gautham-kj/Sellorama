@@ -59,6 +59,12 @@ pub struct Item {
     rating: Option<f32>,
     price: f32,
     stock: Option<i32>,
+    // media: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, FromRow, ToSchema)]
+pub struct MediaResponse {
+    media_id: Uuid,
 }
 
 #[derive(Deserialize, Serialize, FromRow, ToSchema)]
@@ -70,6 +76,7 @@ pub struct ItemStock {
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ItemResponse {
     detail: Item,
+    media: Option<Vec<String>>,
     sameuser: bool,
 }
 
@@ -137,7 +144,18 @@ pub async fn create_item(
 
             while let Some(field) = multipart.next_field().await.unwrap() {
                 let name = field.name().unwrap().to_owned();
-                let data = field.bytes().await.unwrap().to_vec();
+                let data;
+                match field.bytes().await {
+                    Ok(bytes) => data = bytes.to_vec(),
+                    Err(e) => {
+                        return (
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            Json(json!(GeneralResponse {
+                                detail: "File too large".to_string()
+                            })),
+                        );
+                    }
+                }
 
                 match name.as_str() {
                     "title" => form_data.title = String::from_utf8(data).unwrap(),
@@ -216,7 +234,6 @@ pub async fn create_item(
                                     }
                                 }
                                 txn.commit().await.unwrap();
-
                                 (
                                     StatusCode::CREATED,
                                     Json(json!(GeneralResponse {
@@ -463,25 +480,68 @@ pub async fn get_item(
                 .fetch_one(&state.db_pool)
                 .await
             {
-                Ok(response) => (
-                    StatusCode::OK,
-                    Json(json!(ItemResponse {
-                        detail: Item {
-                            item_id: response.item_id,
-                            user_id: response.user_id,
-                            title: response.title,
-                            content: response.content,
-                            price: response.price,
-                            rating: response.rating,
-                            stock: response.stock
-                        },
-                        sameuser: if response.user_id == uresponse.user_id {
-                            true
-                        } else {
-                            false
-                        }
-                    })),
-                ),
+                Ok(response) => {
+                    let media_query = r#"SELECT "media_id" FROM "item_media" WHERE "item_id" = $1"#;
+                    let media_response = sqlx::query_as::<_, MediaResponse>(media_query)
+                        .bind(item_id)
+                        .fetch_all(&state.db_pool)
+                        .await
+                        .unwrap();
+                    let mut media_urls: Vec<String> = vec![];
+                    for media_item in media_response {
+                        let url = get_presigned_url(
+                            &state.s3_client,
+                            "sellorama-test",
+                            format!("{}.jpg", media_item.media_id).as_str(),
+                            3600,
+                        )
+                        .await
+                        .unwrap();
+                        media_urls.push(url);
+                    }
+                    match media_urls.len(){
+                        0 => (
+                            StatusCode::OK,
+                            Json(json!(ItemResponse {
+                                detail: Item {
+                                    item_id: response.item_id,
+                                    user_id: response.user_id,
+                                    title: response.title,
+                                    content: response.content,
+                                    price: response.price,
+                                    rating: response.rating,
+                                    stock: response.stock,
+                                },
+                                media: None,
+                                sameuser: if response.user_id == uresponse.user_id {
+                                    true
+                                } else {
+                                    false
+                                }
+                            })),
+                        ),
+                        _ => (
+                            StatusCode::OK,
+                            Json(json!(ItemResponse {
+                                detail: Item {
+                                    item_id: response.item_id,
+                                    user_id: response.user_id,
+                                    title: response.title,
+                                    content: response.content,
+                                    price: response.price,
+                                    rating: response.rating,
+                                    stock: response.stock,
+                                },
+                                media: Some(media_urls),
+                                sameuser: if response.user_id == uresponse.user_id {
+                                    true
+                                } else {
+                                    false
+                                }
+                            })),
+                        )
+                    }
+                },
                 Err(e) => (
                     StatusCode::NOT_FOUND,
                     Json(json!(GeneralResponse {
