@@ -2,6 +2,7 @@ use anyhow::Error;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{
     config::{Credentials, Region, SharedCredentialsProvider},
+    primitives::ByteStream,
     Client,
 };
 
@@ -71,9 +72,26 @@ pub async fn get_presigned_url(
         )?)
         .await?;
 
-    // println!("Object URI: {}", presigned_request.uri());
-
     Ok(presigned_request.uri().to_owned())
 }
 
-// pub async fn put_multipart_object{}
+pub async fn put_object(
+    client: &Client,
+    bucket: &str,
+    object: String,
+    data: ByteStream,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let response = client
+        .put_object()
+        .bucket(bucket)
+        .key(object.as_str())
+        .body(data)
+        .send()
+        .await?;
+
+    println!("Response: {:?}", response);
+
+    Ok(())
+}
+
+
