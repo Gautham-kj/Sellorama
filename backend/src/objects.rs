@@ -89,9 +89,5 @@ pub async fn put_object(
         .send()
         .await?;
 
-    println!("Response: {:?}", response);
-
     Ok(())
 }
-
-

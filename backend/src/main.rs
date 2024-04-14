@@ -186,7 +186,7 @@ async fn main() {
 
     let appstate = AppState {
         db_pool: pool.clone(),
-        s3_client: s3_client.clone(),
+        s3_client: s3_client,
     };
 
     let cors = CorsLayer::new()
