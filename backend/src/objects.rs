@@ -81,7 +81,7 @@ pub async fn put_object(
     object: String,
     data: ByteStream,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let response = client
+    let _response = client
         .put_object()
         .bucket(bucket)
         .key(object.as_str())

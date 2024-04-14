@@ -82,7 +82,7 @@ pub struct ItemResponse {
 
 #[derive(Serialize, ToSchema)]
 pub struct PageResponse {
-    items: Vec<Item>,
+    items: Vec<ItemResponse>,
 }
 
 #[derive(Deserialize, ToSchema, Debug, IntoParams)]
@@ -481,26 +481,16 @@ pub async fn get_item(
                 .await
             {
                 Ok(response) => {
-                    let media_query = r#"SELECT "media_id" FROM "item_media" WHERE "item_id" = $1"#;
-                    let media_response = sqlx::query_as::<_, MediaResponse>(media_query)
-                        .bind(item_id)
-                        .fetch_all(&state.db_pool)
-                        .await
-                        .unwrap();
-                    let mut media_urls: Vec<String> = vec![];
-                    for media_item in media_response {
-                        let url = get_presigned_url(
-                            &state.s3_client,
-                            "sellorama-test",
-                            format!("{}.jpg", media_item.media_id).as_str(),
-                            3600,
-                        )
-                        .await
-                        .unwrap();
-                        media_urls.push(url);
-                    }
-                    match media_urls.len(){
-                        0 => (
+                    let media_urls = get_presigned_urls_for_item(
+                        response.item_id,
+                        &state.db_pool,
+                        &state.s3_client,
+                        String::from("sellorama-test"),
+                    )
+                    .await
+                    .unwrap();
+                    match media_urls {
+                        None => (
                             StatusCode::OK,
                             Json(json!(ItemResponse {
                                 detail: Item {
@@ -520,7 +510,7 @@ pub async fn get_item(
                                 }
                             })),
                         ),
-                        _ => (
+                        Some(media_urls) => (
                             StatusCode::OK,
                             Json(json!(ItemResponse {
                                 detail: Item {
@@ -539,9 +529,9 @@ pub async fn get_item(
                                     false
                                 }
                             })),
-                        )
+                        ),
                     }
-                },
+                }
                 Err(e) => (
                     StatusCode::NOT_FOUND,
                     Json(json!(GeneralResponse {
@@ -582,7 +572,24 @@ pub async fn get_items(
         .fetch_all(&state.db_pool)
         .await
     {
-        Ok(result) => (StatusCode::OK, Json(json!(PageResponse { items: result }))),
+        Ok(result) => {
+            let mut response:Vec<ItemResponse> =vec![]; 
+            for item in result {
+                let media_urls = get_presigned_urls_for_item(item.item_id,&state.db_pool, &state.s3_client, "sellorama-test".to_owned()).await.unwrap();
+                match media_urls {
+                    Some(media_urls) => {
+                        response.push(ItemResponse { detail: item, media: Some(media_urls), sameuser:false })
+                    },
+                    None => {
+                        response.push(ItemResponse {
+                            detail:item,media: None,sameuser:false
+                        })
+                    }
+                }
+            }
+            (StatusCode::OK,Json(json!(PageResponse{items:response})))
+
+        }
         Err(e) => (
             StatusCode::NOT_FOUND,
             Json(json!(GeneralResponse {
@@ -890,4 +897,33 @@ fn paginate_items(pagination: ItemsQuery) -> String {
         query
     );
     return query;
+}
+
+async fn get_presigned_urls_for_item(
+    item_id: Uuid,
+    db_pool: &sqlx::Pool<sqlx::Postgres>,
+    s3_client: &aws_sdk_s3::Client,
+    bucket: String,
+) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
+    let media_query = r#"SELECT "media_id" FROM "item_media" WHERE "item_id" = $1"#;
+    let media_response = sqlx::query_as::<_, MediaResponse>(media_query)
+        .bind(item_id)
+        .fetch_all(db_pool)
+        .await?;
+    let mut media_urls: Vec<String> = vec![];
+    for media_item in media_response {
+        let url = get_presigned_url(
+            s3_client,
+            bucket.as_str(),
+            format!("{}.jpg", media_item.media_id).as_str(),
+            3600,
+        )
+        .await
+        .unwrap();
+        media_urls.push(url);
+    }
+    match media_urls.len() {
+        0 => Ok(None),
+        _ => Ok(Some(media_urls)),
+    }
 }
