@@ -76,6 +76,7 @@ impl<'de> Deserialize<'de> for Filters {
 pub struct AppState {
     db_pool: Pool<Postgres>,
     s3_client: aws_sdk_s3::Client,
+    image_bucket: String
 }
 
 #[derive(Serialize, ToSchema)]
@@ -160,6 +161,7 @@ async fn main() {
         std::env::var("AWS_SECRET_ACCESS_KEY").expect("AWS_SECRET_KEY must be set");
     let s3_endpoint_url = std::env::var("AWS_ENDPOINT_URL").expect("AWS_ENDPOINT_URL must be set");
     let s3_region = std::env::var("AWS_REGION").expect("AWS_REGION must be set");
+    let image_bucket = std::env::var("IMAGE_BUCKET").expect("IMAGE_BUCKET_NAME must be set");
 
     let s3_credentials = objects::S3Credentials::new(
         s3_access_key,
@@ -187,6 +189,7 @@ async fn main() {
     let appstate = AppState {
         db_pool: pool.clone(),
         s3_client: s3_client,
+        image_bucket: image_bucket
     };
 
     let cors = CorsLayer::new()

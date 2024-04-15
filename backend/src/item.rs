@@ -219,7 +219,7 @@ pub async fn create_item(
                                     );
                                     match put_object(
                                         &state.s3_client,
-                                        "sellorama-test",
+                                        &state.image_bucket,
                                         file_key,
                                         data_stream,
                                     )
@@ -488,7 +488,7 @@ pub async fn get_item(
                         vec![response.item_id],
                         &state.db_pool,
                         &state.s3_client,
-                        String::from("sellorama-test"),
+                        &state.image_bucket,
                     )
                     .await
                     .unwrap();
@@ -585,7 +585,7 @@ pub async fn get_items(
                 items,
                 &state.db_pool,
                 &state.s3_client,
-                "sellorama-test".to_owned(),
+                &state.image_bucket,
             )
             .await
             .unwrap();
@@ -924,7 +924,7 @@ async fn get_presigned_urls_for_items(
     item_ids: Vec<Uuid>,
     db_pool: &sqlx::Pool<sqlx::Postgres>,
     s3_client: &aws_sdk_s3::Client,
-    bucket: String,
+    bucket: &String,
 ) -> Result<HashMap<Uuid, Vec<String>>, Box<dyn std::error::Error>> {
     let media_query = r#"
     SELECT t1."item_id",t2."media_id"
