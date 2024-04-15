@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::{
     objects::{get_presigned_url, put_object},
-    user::{self, check_session_validity, extract_session_header, GeneralResponse},
+    user::{check_session_validity, extract_session_header, GeneralResponse},
     AppState, Filters, Order,
 };
 use axum::{
@@ -30,7 +32,7 @@ pub struct ItemsQuery {
     search_string: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Deserialize, ToSchema)]
 pub struct ItemForm {
     title: String,
     content: String,
@@ -59,12 +61,12 @@ pub struct Item {
     rating: Option<f32>,
     price: f32,
     stock: Option<i32>,
-    // media: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct MediaResponse {
-    media_id: Uuid,
+    media_id: Option<Uuid>,
+    item_id: Uuid,
 }
 
 #[derive(Deserialize, Serialize, FromRow, ToSchema)]
@@ -108,7 +110,9 @@ pub struct SearchResult {
         ("session_id"=[])
     )
 )]
-///Endpoint to create an Item
+/// Create Item
+///
+/// Endpoint to create an Item
 pub async fn create_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -147,7 +151,7 @@ pub async fn create_item(
                 let data;
                 match field.bytes().await {
                     Ok(bytes) => data = bytes.to_vec(),
-                    Err(e) => {
+                    Err(_e) => {
                         return (
                             StatusCode::UNPROCESSABLE_ENTITY,
                             Json(json!(GeneralResponse {
@@ -221,8 +225,7 @@ pub async fn create_item(
                                     )
                                     .await
                                     {
-                                        Err(e) => {
-                                            println!("The error is {:?}", e);
+                                        Err(_e) => {
                                             return (
                                                 StatusCode::UNPROCESSABLE_ENTITY,
                                                 Json(json!(GeneralResponse {
@@ -294,7 +297,9 @@ pub async fn create_item(
         (status = 500 , body = GeneralResponse),
     )
 )]
-///Endpoint to delete an Item
+/// Delete Item
+///
+/// Endpoint to delete an Item
 pub async fn delete_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -314,7 +319,6 @@ pub async fn delete_item(
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
-            println!("{:?}", response);
             match sqlx::query_as::<_,ItemId>(r#"DELETE FROM "item" WHERE "item_id" = $1 AND "user_id" = $2 RETURNING "item_id" "#)
                     .bind(item_id)
                     .bind(response.user_id)
@@ -363,7 +367,9 @@ pub async fn delete_item(
         (status = 500 , body = GeneralResponse),
     )
 )]
-///endpoint to edit an Item
+/// Edit Item
+///
+/// Endpoint to edit an Item
 pub async fn edit_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -414,15 +420,12 @@ pub async fn edit_item(
                         })),
                     ),
                 },
-                Err(e) => {
-                    println!("{:?}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!(GeneralResponse {
-                            detail: "Error deleting item".to_string()
-                        })),
-                    )
-                }
+                Err(_e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(GeneralResponse {
+                        detail: "Error deleting item".to_string()
+                    })),
+                ),
             }
         }
         None => (
@@ -481,16 +484,16 @@ pub async fn get_item(
                 .await
             {
                 Ok(response) => {
-                    let media_urls = get_presigned_urls_for_item(
-                        response.item_id,
+                    let media_urls = get_presigned_urls_for_items(
+                        vec![response.item_id],
                         &state.db_pool,
                         &state.s3_client,
                         String::from("sellorama-test"),
                     )
                     .await
                     .unwrap();
-                    match media_urls {
-                        None => (
+                    match media_urls.len() {
+                        0 => (
                             StatusCode::OK,
                             Json(json!(ItemResponse {
                                 detail: Item {
@@ -510,11 +513,11 @@ pub async fn get_item(
                                 }
                             })),
                         ),
-                        Some(media_urls) => (
+                        _ => (
                             StatusCode::OK,
                             Json(json!(ItemResponse {
                                 detail: Item {
-                                    item_id: response.item_id,
+                                    item_id: response.item_id.clone(),
                                     user_id: response.user_id,
                                     title: response.title,
                                     content: response.content,
@@ -522,7 +525,7 @@ pub async fn get_item(
                                     rating: response.rating,
                                     stock: response.stock,
                                 },
-                                media: Some(media_urls),
+                                media: Some(media_urls[&response.item_id].clone()),
                                 sameuser: if response.user_id == uresponse.user_id {
                                     true
                                 } else {
@@ -573,22 +576,39 @@ pub async fn get_items(
         .await
     {
         Ok(result) => {
-            let mut response:Vec<ItemResponse> =vec![]; 
+            let mut response: Vec<ItemResponse> = vec![];
+            let items: Vec<Uuid> = result
+                .iter()
+                .map(|item| item.item_id)
+                .collect::<Vec<Uuid>>();
+            let media_urls = get_presigned_urls_for_items(
+                items,
+                &state.db_pool,
+                &state.s3_client,
+                "sellorama-test".to_owned(),
+            )
+            .await
+            .unwrap();
+
             for item in result {
-                let media_urls = get_presigned_urls_for_item(item.item_id,&state.db_pool, &state.s3_client, "sellorama-test".to_owned()).await.unwrap();
-                match media_urls {
-                    Some(media_urls) => {
-                        response.push(ItemResponse { detail: item, media: Some(media_urls), sameuser:false })
-                    },
-                    None => {
-                        response.push(ItemResponse {
-                            detail:item,media: None,sameuser:false
-                        })
-                    }
+                let media_item = media_urls[&item.item_id].clone();
+                match media_item.len() {
+                    0 => response.push(ItemResponse {
+                        detail: item,
+                        media: None,
+                        sameuser: false,
+                    }),
+                    _ => response.push(ItemResponse {
+                        detail: item,
+                        media: Some(media_item),
+                        sameuser: false,
+                    }),
                 }
             }
-            (StatusCode::OK,Json(json!(PageResponse{items:response})))
-
+            (
+                StatusCode::OK,
+                Json(json!(PageResponse { items: response })),
+            )
         }
         Err(e) => (
             StatusCode::NOT_FOUND,
@@ -611,7 +631,9 @@ pub async fn get_items(
         ("session_id"=[])
     )
 )]
-///Endpoint to rate an Item
+///Rate an Item
+///
+/// Endpoint to rate an item
 pub async fn rate_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -706,7 +728,6 @@ pub async fn edit_stock(
         }
     }
     match check_session_validity(&state.db_pool, session_id).await {
-        // create plsql function to check if item actually belongs to user
         Some(user_response) => {
             let query = r#"INSERT INTO "stock" ("item_id","quantity") 
             SELECT $1,$2  WHERE item_ownership($1,$3) IS TRUE 
@@ -760,7 +781,7 @@ pub async fn edit_stock(
         (status = 200, body = Vec<Item>)
     )
 )]
-///Endpoint for search autocompletions
+///Get Search Autocompletions
 pub async fn search_suggestions(
     state: State<AppState>,
     search_query: Query<SearchQuery>,
@@ -899,31 +920,54 @@ fn paginate_items(pagination: ItemsQuery) -> String {
     return query;
 }
 
-async fn get_presigned_urls_for_item(
-    item_id: Uuid,
+async fn get_presigned_urls_for_items(
+    item_ids: Vec<Uuid>,
     db_pool: &sqlx::Pool<sqlx::Postgres>,
     s3_client: &aws_sdk_s3::Client,
     bucket: String,
-) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
-    let media_query = r#"SELECT "media_id" FROM "item_media" WHERE "item_id" = $1"#;
+) -> Result<HashMap<Uuid, Vec<String>>, Box<dyn std::error::Error>> {
+    let media_query = r#"
+    SELECT t1."item_id",t2."media_id"
+    FROM 
+    (select * from UNNEST($1::uuid[]) as t("item_id")) as t1
+    LEFT JOIN 
+    (select * from "item_media") as t2 
+    ON t1."item_id" = t2."item_id""#;
     let media_response = sqlx::query_as::<_, MediaResponse>(media_query)
-        .bind(item_id)
+        .bind(item_ids)
         .fetch_all(db_pool)
         .await?;
-    let mut media_urls: Vec<String> = vec![];
+    let mut item_with_media: HashMap<Uuid, Vec<String>> = HashMap::new();
     for media_item in media_response {
-        let url = get_presigned_url(
-            s3_client,
-            bucket.as_str(),
-            format!("{}.jpg", media_item.media_id).as_str(),
-            3600,
-        )
-        .await
-        .unwrap();
-        media_urls.push(url);
+        match media_item.media_id {
+            Some(media_id) => match item_with_media.get_mut(&media_item.item_id) {
+                Some(vector) => {
+                    let url = get_presigned_url(
+                        s3_client,
+                        bucket.as_str(),
+                        format!("{}.jpg", media_id).as_str(),
+                        3600,
+                    )
+                    .await
+                    .unwrap();
+                    vector.push(url);
+                }
+                None => {
+                    let url = get_presigned_url(
+                        s3_client,
+                        bucket.as_str(),
+                        format!("{}.jpg", media_id).as_str(),
+                        3600,
+                    )
+                    .await
+                    .unwrap();
+                    item_with_media.insert(media_item.item_id, vec![url]);
+                }
+            },
+            None => {
+                item_with_media.insert(media_item.item_id, vec![]);
+            }
+        }
     }
-    match media_urls.len() {
-        0 => Ok(None),
-        _ => Ok(Some(media_urls)),
-    }
+    Ok(item_with_media)
 }
