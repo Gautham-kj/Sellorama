@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use crate::{
+    objects::{get_presigned_url, put_object},
     user::{check_session_validity, extract_session_header, GeneralResponse},
     AppState, Filters, Order,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Form, Json,
@@ -34,6 +37,7 @@ pub struct ItemForm {
     title: String,
     content: String,
     price: f32,
+    item_media: Option<Vec<Vec<u8>>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -59,6 +63,12 @@ pub struct Item {
     stock: Option<i32>,
 }
 
+#[derive(Serialize, Deserialize, FromRow, ToSchema)]
+pub struct MediaResponse {
+    media_id: Option<Uuid>,
+    item_id: Uuid,
+}
+
 #[derive(Deserialize, Serialize, FromRow, ToSchema)]
 pub struct ItemStock {
     item_id: Uuid,
@@ -68,12 +78,13 @@ pub struct ItemStock {
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ItemResponse {
     detail: Item,
+    media: Option<Vec<String>>,
     sameuser: bool,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct PageResponse {
-    items: Vec<Item>,
+    items: Vec<ItemResponse>,
 }
 
 #[derive(Deserialize, ToSchema, Debug, IntoParams)]
@@ -94,15 +105,19 @@ pub struct SearchResult {
         (status = 401, body = GeneralResponse),
         (status = 100, body = GeneralResponse)
     ),
+    request_body(content_type = "multipart/form-data", content = ItemForm),
     security(
         ("session_id"=[])
     )
 )]
-///Endpoint to create an Item
+/// Create Item
+///
+/// Endpoint to create an Item
 pub async fn create_item(
     headers: HeaderMap,
     state: State<AppState>,
-    Form(form_data): Form<ItemForm>,
+    // Form(form_data): Form<ItemForm>,
+    mut multipart: Multipart,
 ) -> impl IntoResponse {
     let session_id;
     match extract_session_header(headers).await {
@@ -116,33 +131,149 @@ pub async fn create_item(
             )
         }
     }
+    //multipart form handling
+
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userwithsession) => {
-            let query = r#"
-                    INSERT INTO "item" ("user_id","title","content","price") 
-                    VALUES ($1,$2,$3,$4) returning "item_id";
-                "#;
-            match sqlx::query_as::<_, ItemId>(query)
-                .bind(userwithsession.user_id)
-                .bind(&form_data.title)
-                .bind(&form_data.content)
-                .bind(&form_data.price)
-                .fetch_optional(&state.db_pool)
-                .await
-                .unwrap()
+            let mut txn = state.db_pool.begin().await.unwrap();
+
+            let mut form_data = ItemForm {
+                title: "".to_string(),
+                content: "".to_string(),
+                price: 0.0,
+                item_media: None,
+            };
+
+            let mut item_media: Vec<Vec<u8>> = vec![];
+
+            while let Some(field) = multipart.next_field().await.unwrap() {
+                let name = field.name().unwrap().to_owned();
+                let data;
+                match field.bytes().await {
+                    Ok(bytes) => data = bytes.to_vec(),
+                    Err(_e) => {
+                        return (
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            Json(json!(GeneralResponse {
+                                detail: "File too large".to_string()
+                            })),
+                        );
+                    }
+                }
+
+                match name.as_str() {
+                    "title" => form_data.title = String::from_utf8(data).unwrap(),
+                    "content" => form_data.content = String::from_utf8(data).unwrap(),
+                    "price" => form_data.price = String::from_utf8(data).unwrap().parse().unwrap(),
+                    "item_media" => {
+                        if data.len() > 0 {
+                            item_media.push(data);
+                        } else {
+                            ()
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
+            match item_media.len() {
+                0 => form_data.item_media = None,
+                _ => form_data.item_media = Some(item_media.clone()),
+            }
+
+            match sqlx::query_as::<_, ItemId>(
+                r#"
+                INSERT INTO "item" ("user_id","title","content","price")
+                VALUES ($1,$2,$3,$4) returning "item_id""#,
+            )
+            .bind(&userwithsession.user_id)
+            .bind(&form_data.title)
+            .bind(&form_data.content)
+            .bind(&form_data.price)
+            .fetch_optional(&mut *txn)
+            .await
+            .unwrap()
             {
-                Some(_response) => (
-                    StatusCode::CREATED,
-                    Json(json!(GeneralResponse {
-                        detail: "Item Created".to_string()
-                    })),
-                ),
-                None => (
-                    StatusCode::NOT_FOUND,
-                    Json(json!(GeneralResponse {
-                        detail: "Could not make Item".to_string()
-                    })),
-                ),
+                Some(item_response) => match form_data.item_media {
+                    Some(media) => {
+                        let mut media_ids: Vec<Uuid> = vec![];
+                        for _media_item in &media {
+                            media_ids.push(Uuid::new_v4());
+                        }
+                        let media_query = r#"
+                            INSERT INTO "item_media" ("media_id","item_id")
+                            (SELECT * FROM UNNEST($1::uuid[],$2::uuid[])) RETURNING "item_id" ;
+                        "#;
+                        match sqlx::query_as::<_, ItemId>(media_query)
+                            .bind(&media_ids)
+                            .bind(vec![item_response.item_id; media_ids.len()])
+                            .fetch_optional(&mut *txn)
+                            .await
+                            .unwrap()
+                        {
+                            Some(_response) => {
+                                for (index, media_item) in media.iter().enumerate() {
+                                    let file_key = format!("{}.jpg", media_ids[index]);
+                                    let data_stream = aws_sdk_s3::primitives::ByteStream::from(
+                                        media_item.clone(),
+                                    );
+                                    match put_object(
+                                        &state.s3_client,
+                                        "sellorama-test",
+                                        file_key,
+                                        data_stream,
+                                    )
+                                    .await
+                                    {
+                                        Err(_e) => {
+                                            return (
+                                                StatusCode::UNPROCESSABLE_ENTITY,
+                                                Json(json!(GeneralResponse {
+                                                    detail: "Error Creating Item".to_string()
+                                                })),
+                                            );
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                                txn.commit().await.unwrap();
+                                (
+                                    StatusCode::CREATED,
+                                    Json(json!(GeneralResponse {
+                                        detail: "Item Created".to_string()
+                                    })),
+                                )
+                            }
+                            None => {
+                                txn.rollback().await.unwrap();
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!(GeneralResponse {
+                                        detail: "Error Creating Item".to_string()
+                                    })),
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        txn.commit().await.unwrap();
+                        return (
+                            StatusCode::CREATED,
+                            Json(json!(GeneralResponse {
+                                detail: "Item Created".to_string()
+                            })),
+                        );
+                    }
+                },
+                None => {
+                    txn.rollback().await.unwrap();
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!(GeneralResponse {
+                            detail: "Could not make Item".to_string()
+                        })),
+                    );
+                }
             }
         }
         None => (
@@ -166,7 +297,9 @@ pub async fn create_item(
         (status = 500 , body = GeneralResponse),
     )
 )]
-///Endpoint to delete an Item
+/// Delete Item
+///
+/// Endpoint to delete an Item
 pub async fn delete_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -186,7 +319,6 @@ pub async fn delete_item(
     }
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
-            println!("{:?}", response);
             match sqlx::query_as::<_,ItemId>(r#"DELETE FROM "item" WHERE "item_id" = $1 AND "user_id" = $2 RETURNING "item_id" "#)
                     .bind(item_id)
                     .bind(response.user_id)
@@ -235,7 +367,9 @@ pub async fn delete_item(
         (status = 500 , body = GeneralResponse),
     )
 )]
-///endpoint to edit an Item
+/// Edit Item
+///
+/// Endpoint to edit an Item
 pub async fn edit_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -286,15 +420,12 @@ pub async fn edit_item(
                         })),
                     ),
                 },
-                Err(e) => {
-                    println!("{:?}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!(GeneralResponse {
-                            detail: "Error deleting item".to_string()
-                        })),
-                    )
-                }
+                Err(_e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!(GeneralResponse {
+                        detail: "Error deleting item".to_string()
+                    })),
+                ),
             }
         }
         None => (
@@ -352,25 +483,58 @@ pub async fn get_item(
                 .fetch_one(&state.db_pool)
                 .await
             {
-                Ok(response) => (
-                    StatusCode::OK,
-                    Json(json!(ItemResponse {
-                        detail: Item {
-                            item_id: response.item_id,
-                            user_id: response.user_id,
-                            title: response.title,
-                            content: response.content,
-                            price: response.price,
-                            rating: response.rating,
-                            stock: response.stock
-                        },
-                        sameuser: if response.user_id == uresponse.user_id {
-                            true
-                        } else {
-                            false
-                        }
-                    })),
-                ),
+                Ok(response) => {
+                    let media_urls = get_presigned_urls_for_items(
+                        vec![response.item_id],
+                        &state.db_pool,
+                        &state.s3_client,
+                        String::from("sellorama-test"),
+                    )
+                    .await
+                    .unwrap();
+                    match media_urls.len() {
+                        0 => (
+                            StatusCode::OK,
+                            Json(json!(ItemResponse {
+                                detail: Item {
+                                    item_id: response.item_id,
+                                    user_id: response.user_id,
+                                    title: response.title,
+                                    content: response.content,
+                                    price: response.price,
+                                    rating: response.rating,
+                                    stock: response.stock,
+                                },
+                                media: None,
+                                sameuser: if response.user_id == uresponse.user_id {
+                                    true
+                                } else {
+                                    false
+                                }
+                            })),
+                        ),
+                        _ => (
+                            StatusCode::OK,
+                            Json(json!(ItemResponse {
+                                detail: Item {
+                                    item_id: response.item_id.clone(),
+                                    user_id: response.user_id,
+                                    title: response.title,
+                                    content: response.content,
+                                    price: response.price,
+                                    rating: response.rating,
+                                    stock: response.stock,
+                                },
+                                media: Some(media_urls[&response.item_id].clone()),
+                                sameuser: if response.user_id == uresponse.user_id {
+                                    true
+                                } else {
+                                    false
+                                }
+                            })),
+                        ),
+                    }
+                }
                 Err(e) => (
                     StatusCode::NOT_FOUND,
                     Json(json!(GeneralResponse {
@@ -411,7 +575,41 @@ pub async fn get_items(
         .fetch_all(&state.db_pool)
         .await
     {
-        Ok(result) => (StatusCode::OK, Json(json!(PageResponse { items: result }))),
+        Ok(result) => {
+            let mut response: Vec<ItemResponse> = vec![];
+            let items: Vec<Uuid> = result
+                .iter()
+                .map(|item| item.item_id)
+                .collect::<Vec<Uuid>>();
+            let media_urls = get_presigned_urls_for_items(
+                items,
+                &state.db_pool,
+                &state.s3_client,
+                "sellorama-test".to_owned(),
+            )
+            .await
+            .unwrap();
+
+            for item in result {
+                let media_item = media_urls[&item.item_id].clone();
+                match media_item.len() {
+                    0 => response.push(ItemResponse {
+                        detail: item,
+                        media: None,
+                        sameuser: false,
+                    }),
+                    _ => response.push(ItemResponse {
+                        detail: item,
+                        media: Some(media_item),
+                        sameuser: false,
+                    }),
+                }
+            }
+            (
+                StatusCode::OK,
+                Json(json!(PageResponse { items: response })),
+            )
+        }
         Err(e) => (
             StatusCode::NOT_FOUND,
             Json(json!(GeneralResponse {
@@ -433,7 +631,9 @@ pub async fn get_items(
         ("session_id"=[])
     )
 )]
-///Endpoint to rate an Item
+///Rate an Item
+///
+/// Endpoint to rate an item
 pub async fn rate_item(
     headers: HeaderMap,
     state: State<AppState>,
@@ -528,7 +728,6 @@ pub async fn edit_stock(
         }
     }
     match check_session_validity(&state.db_pool, session_id).await {
-        // create plsql function to check if item actually belongs to user
         Some(user_response) => {
             let query = r#"INSERT INTO "stock" ("item_id","quantity") 
             SELECT $1,$2  WHERE item_ownership($1,$3) IS TRUE 
@@ -582,7 +781,7 @@ pub async fn edit_stock(
         (status = 200, body = Vec<Item>)
     )
 )]
-///Endpoint for search autocompletions
+///Get Search Autocompletions
 pub async fn search_suggestions(
     state: State<AppState>,
     search_query: Query<SearchQuery>,
@@ -719,4 +918,56 @@ fn paginate_items(pagination: ItemsQuery) -> String {
         query
     );
     return query;
+}
+
+async fn get_presigned_urls_for_items(
+    item_ids: Vec<Uuid>,
+    db_pool: &sqlx::Pool<sqlx::Postgres>,
+    s3_client: &aws_sdk_s3::Client,
+    bucket: String,
+) -> Result<HashMap<Uuid, Vec<String>>, Box<dyn std::error::Error>> {
+    let media_query = r#"
+    SELECT t1."item_id",t2."media_id"
+    FROM 
+    (select * from UNNEST($1::uuid[]) as t("item_id")) as t1
+    LEFT JOIN 
+    (select * from "item_media") as t2 
+    ON t1."item_id" = t2."item_id""#;
+    let media_response = sqlx::query_as::<_, MediaResponse>(media_query)
+        .bind(item_ids)
+        .fetch_all(db_pool)
+        .await?;
+    let mut item_with_media: HashMap<Uuid, Vec<String>> = HashMap::new();
+    for media_item in media_response {
+        match media_item.media_id {
+            Some(media_id) => match item_with_media.get_mut(&media_item.item_id) {
+                Some(vector) => {
+                    let url = get_presigned_url(
+                        s3_client,
+                        bucket.as_str(),
+                        format!("{}.jpg", media_id).as_str(),
+                        3600,
+                    )
+                    .await
+                    .unwrap();
+                    vector.push(url);
+                }
+                None => {
+                    let url = get_presigned_url(
+                        s3_client,
+                        bucket.as_str(),
+                        format!("{}.jpg", media_id).as_str(),
+                        3600,
+                    )
+                    .await
+                    .unwrap();
+                    item_with_media.insert(media_item.item_id, vec![url]);
+                }
+            },
+            None => {
+                item_with_media.insert(media_item.item_id, vec![]);
+            }
+        }
+    }
+    Ok(item_with_media)
 }
