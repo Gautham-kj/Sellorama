@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for Filters {
 pub struct AppState {
     db_pool: Pool<Postgres>,
     s3_client: aws_sdk_s3::Client,
-    image_bucket: String
+    image_bucket: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -189,7 +189,7 @@ async fn main() {
     let appstate = AppState {
         db_pool: pool.clone(),
         s3_client: s3_client,
-        image_bucket: image_bucket
+        image_bucket: image_bucket,
     };
 
     let cors = CorsLayer::new()
