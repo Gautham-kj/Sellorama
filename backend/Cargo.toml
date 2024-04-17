@@ -22,6 +22,7 @@ serde_json = "1.0.113"
 base64 = "0.22.0"
 uuid = {version = "1.7.0",features = ["v4","serde"]}
 regex = "1.10.3"
+argon2 = {version = "0.5.3", features = ["password-hash"]}
 
 #aws s3
 aws-config = "1.1.9"
