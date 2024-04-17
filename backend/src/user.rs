@@ -1,12 +1,16 @@
 use crate::AppState;
 use crate::Duration;
+use argon2::PasswordHash;
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Form, Json,
 };
-use base64::engine::{general_purpose, Engine};
 use chrono::{NaiveDateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -29,6 +33,11 @@ pub struct UserLogin {
     password: String,
 }
 
+#[derive(FromRow)]
+pub struct UserCreds {
+    user_id: Uuid,
+    hashed_pass: String,
+}
 #[derive(Deserialize, Serialize, ToSchema, FromRow)]
 pub struct Session {
     pub session_id: Uuid,
@@ -119,6 +128,7 @@ pub async fn signup(
     match sqlx::query_as::<_, User>(check_query)
         .bind(&username)
         .bind(&email_id)
+        .bind(&password)
         .fetch_optional(db_pool)
         .await
         .expect("Database error")
@@ -214,10 +224,7 @@ pub async fn user_login(
     state: State<AppState>,
     Form(form_data): Form<UserLogin>,
 ) -> impl IntoResponse {
-    let (username, hashed_password) = (
-        form_data.username,
-        create_hashed_password(form_data.password),
-    );
+    let (username, password) = (form_data.username, form_data.password);
     invalidate_dangling_sessions(&state.db_pool)
         .await
         .expect("Error Deleting invalid sessions");
@@ -226,43 +233,51 @@ pub async fn user_login(
                 SELECT "user_id" FROM "user"
                 WHERE "username" = $1 
             )
-            SELECT "user_id" FROM "password"
-            WHERE "user_id" in (SELECT * FROM INS) AND "hashed_pass" = $2
+            SELECT "user_id","hashed_pass" FROM "password"
+            WHERE "user_id" in (SELECT * FROM INS)
         "#;
 
-    match sqlx::query_as::<_, UserId>(query)
+    match sqlx::query_as::<_, UserCreds>(query)
         .bind(username)
-        .bind(hashed_password)
+        .bind(&password)
         .fetch_one(&state.db_pool)
         .await
     {
-        Ok(user) => {
-            match create_session(
-                &state.db_pool,
-                user.user_id,
-                Utc::now().naive_utc() + Duration::days(1),
-            )
-            .await
-            {
-                Some(session) => {
-                    println!("Session {} created", session.session_id);
-                    (
-                        StatusCode::CREATED,
-                        Json(json!(SessionResponse { detail: session })),
-                    )
+        Ok(user) => match validate_password(&password, user.hashed_pass) {
+            Ok(_) => {
+                match create_session(
+                    &state.db_pool,
+                    user.user_id,
+                    Utc::now().naive_utc() + Duration::days(1),
+                )
+                .await
+                {
+                    Some(session) => {
+                        println!("Session {} created", session.session_id);
+                        (
+                            StatusCode::CREATED,
+                            Json(json!(SessionResponse { detail: session })),
+                        )
+                    }
+                    None => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!(GeneralResponse {
+                            detail: "Error Creating Session".to_string()
+                        })),
+                    ),
                 }
-                None => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!(GeneralResponse {
-                        detail: "Error Creating Session".to_string()
-                    })),
-                ),
             }
-        }
+            Err(_e) => (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Wrong username or password".to_string()
+                })),
+            ),
+        },
         Err(_e) => (
             StatusCode::UNAUTHORIZED,
             Json(json!(GeneralResponse {
-                detail: "Wrong username or password".to_string()
+                detail: "Invalid Username or password".to_string()
             })),
         ),
     }
@@ -300,8 +315,20 @@ pub async fn logout(state: State<AppState>, Form(form_data): Form<Session>) -> i
 }
 
 fn create_hashed_password(password: String) -> String {
-    let hashed_password = general_purpose::STANDARD.encode(password);
-    hashed_password
+    let salt = SaltString::generate(&mut OsRng);
+    let password_hash = Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+    password_hash
+}
+
+fn validate_password(password: &String, hashed_password: String) -> Result<(), ()> {
+    let password_ref = PasswordHash::new(&hashed_password.as_str()).unwrap();
+    match Argon2::default().verify_password(password.as_bytes(), &password_ref) {
+        Ok(_t) => Ok(()),
+        Err(_e) => Err(()),
+    }
 }
 
 async fn create_session(
