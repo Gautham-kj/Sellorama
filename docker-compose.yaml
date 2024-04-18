@@ -14,7 +14,7 @@ services:
         ports:
             - 5432:5432
         volumes:
-            - ./backend/init:/docker-entrypoint-initdb.d
+            - ./init:/docker-entrypoint-initdb.d
             - pgdata:/var/lib/postgresql/data
         networks:
             network1:
@@ -37,6 +37,8 @@ services:
     #     networks:
     #         network1:
     #             ipv4_address: 172.20.0.6
+    #     volumes:
+    #         - backend:/app
     adminer:
         container_name: adminer
         image: adminer
@@ -57,3 +59,4 @@ networks:
                 - subnet: 172.20.0.0/24
 volumes:
     pgdata:
+    # backend:
