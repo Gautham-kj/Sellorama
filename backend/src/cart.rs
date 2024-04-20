@@ -121,7 +121,7 @@ pub async fn add_item(
         Some(userresponse) => {
             //create plsql function to check and return stock issues
             let query = r#"INSERT INTO "cart" ("cart_id","item_id","quantity") 
-            SELECT $1,$2,$3 WHERE stock_validation($2,$3) IS TRUE
+            SELECT $1,$2,$3 WHERE stock_validation($2,$3) IS TRUE AND item_ownership($2,$1) IS NOT TRUE
             ON CONFLICT("cart_id","item_id")
             DO UPDATE SET "quantity" = EXCLUDED."quantity" RETURNING "item_id","quantity""#;
             match sqlx::query_as::<_, CartItem>(query)
@@ -193,7 +193,7 @@ pub async fn update_cart_item(
     match check_session_validity(&state.db_pool, session_id).await {
         Some(userresponse) => {
             if form_data.quantity > 0 {
-                let query = r#"UPDATE "cart" SET "quantity" = $3 WHERE "cart_id" = $1 AND "item_id" = $2 AND stock_validation($2,$3) IS TRUE RETURNING "item_id","quantity""#;
+                let query = r#"UPDATE "cart" SET "quantity" = $3 WHERE "cart_id" = $1 AND "item_id" = $2 AND item_ownership($2,$1) IS NOT TRUE AND stock_validation($2,$3) IS TRUE RETURNING "item_id","quantity""#;
                 match sqlx::query_as::<_, CartItem>(query)
                     .bind(userresponse.user_id)
                     .bind(form_data.item_id)
