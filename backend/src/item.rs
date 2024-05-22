@@ -36,7 +36,7 @@ pub struct ItemsQuery {
 pub struct ItemForm {
     title: String,
     content: String,
-    price: f32,
+    price: rust_decimal::Decimal,
     item_media: Option<Vec<Vec<u8>>>,
 }
 
@@ -59,7 +59,7 @@ pub struct Item {
     title: String,
     content: String,
     rating: Option<f32>,
-    price: f32,
+    price: rust_decimal::Decimal,
     stock: Option<i32>,
 }
 
@@ -140,7 +140,7 @@ pub async fn create_item(
             let mut form_data = ItemForm {
                 title: "".to_string(),
                 content: "".to_string(),
-                price: 0.0,
+                price: rust_decimal::Decimal::new(0,0),
                 item_media: None,
             };
 
