@@ -11,7 +11,7 @@ axum = {version = "0.7.4",features = ["multipart"]}
 tokio = {version= "1.36.0",features =["rt-multi-thread"]}
 
 #database connection
-sqlx = { version = "0.7.3", features = ["postgres", "macros","runtime-async-std","uuid","chrono"] }
+sqlx = { version = "0.7.3", features = ["postgres", "macros","runtime-async-std","uuid","chrono","rust_decimal"] }
 tower-http = {version = "0.5.2", features = ["cors"]}
 dotenv = "0.15.0"
 
@@ -30,7 +30,8 @@ aws-sdk-s3 = {version="1.20.0" ,features=["behavior-version-latest"]}
 
 #documentation
 utoipa = { version = "4.2.0", features = ["uuid", "axum_extras", "chrono", "serde_yaml"] }
-utoipa-swagger-ui = {version="6.0.0",features=["axum"]}
-utoipa-rapidoc = {version="3.0.0",features=["axum"]}
-utoipa-redoc = {version="3.0.0",features=["axum"]}
+utoipa-swagger-ui = {version="7.0.1",features=["axum"]}
+utoipa-rapidoc = {version="4.0.0",features=["axum"]}
+utoipa-redoc = {version="4.0.0",features=["axum"]}
 anyhow = "1.0.81"
+rust_decimal = { version = "1.35.0", features = ["std", "serde"] }
