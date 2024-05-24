@@ -1,0 +1,28 @@
+name: Integration With Database
+
+on:
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
+jobs:
+    integration:
+        services:
+            postgres:
+                image: postgres:16
+                env:
+                    POSTGRES_DB: sellorama_db
+                    POSTGRES_PASSWORD: test_pass
+                ports:
+                    - 5432:5432
+                volumes:
+                    - ./init:/docker-entrypoint-initdb.d
+                options: --health-cmd pg_isready
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: install sqlx
+              run: cargo install sqlx --verbose
+            - name: run migrations
+              run: sqlx migrate run
+              working-directory: backend/
