@@ -1,0 +1,31 @@
+name: Integration With Database
+
+on:
+    push:
+    pull_request:
+        branches: ["main"]
+jobs:
+    integration:
+        services:
+            postgres:
+                image: postgres:16
+                env:
+                    POSTGRES_USER: srtest
+                    POSTGRES_PASSWORD: pass
+                    POSTGRES_DB: srtest_db
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5 
+                ports:
+                    - 5432:5432
+                        
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: install sqlx-cli
+              run: cargo install sqlx-cli --no-default-features --features postgres 
+            - name: run migrations
+              run: sqlx migrate run --database-url postgresql://srtest:pass@localhost/srtest_db
+              working-directory: backend/
