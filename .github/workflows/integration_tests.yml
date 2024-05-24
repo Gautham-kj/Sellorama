@@ -22,7 +22,7 @@ jobs:
         steps:
             - uses: actions/checkout@v4
             - name: install sqlx
-              run: cargo install sqlx --verbose
+              run: cargo install sqlx-cli --noo-default-features --features postgres 
             - name: run migrations
               run: sqlx migrate run
               working-directory: backend/
