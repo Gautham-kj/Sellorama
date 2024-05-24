@@ -153,7 +153,7 @@ async fn main() {
     dotenv().ok();
 
     // Getting env variables
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_|"localhost:9000".to_string());
     let api_url = std::env::var("API_URL").expect("API_URL must be set");
     // Getting S3 env variables
     let s3_access_key = std::env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY must be set");
