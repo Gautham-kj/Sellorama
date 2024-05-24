@@ -10,18 +10,25 @@ jobs:
             postgres:
                 image: postgres:16
                 env:
-                    POSTGRES_DB: sellorama_db
-                    POSTGRES_PASSWORD: test_pass
+                    POSTGRES_DB: srtest_db
+                    POSTGRES_PASSWORD: pass
                 ports:
                     - 5432:5432
                 volumes:
                     - ./init:/docker-entrypoint-initdb.d
-                options: --health-cmd pg_isready
+                options: >-
+                    --user root
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+                        
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
-            - name: install sqlx
-              run: cargo install sqlx --verbose
+            - name: install sqlx-cli
+              run: cargo install sqlx-cli --no-default-features --features postgres 
+ 
             - name: run migrations
-              run: sqlx migrate run
+              run: sqlx migrate run --database-url postgresql://root:pass@localhost/srtest_db
               working-directory: backend/
