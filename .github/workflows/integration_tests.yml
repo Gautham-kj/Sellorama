@@ -21,8 +21,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
-            - name: install sqlx
-              run: cargo install sqlx-cli --noo-default-features --features postgres 
+            - name: install sqlx-cli
+              run: cargo install sqlx-cli --no-default-features --features postgres 
             - name: run migrations
               run: sqlx migrate run
               working-directory: backend/
