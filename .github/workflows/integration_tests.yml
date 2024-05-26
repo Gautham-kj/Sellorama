@@ -17,15 +17,31 @@ jobs:
                     --health-cmd pg_isready
                     --health-interval 10s
                     --health-timeout 5s
-                    --health-retries 5 
+                    --health-retries 5
                 ports:
                     - 5432:5432
-                        
+
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
             - name: install sqlx-cli
-              run: cargo install sqlx-cli --no-default-features --features postgres 
+              run: cargo install sqlx-cli --no-default-features --features postgres
             - name: run migrations
               run: sqlx migrate run --database-url postgresql://srtest:pass@localhost/srtest_db
-              working-directory: backend/
+              working-directory: backend
+            - name: "Create env file"
+              working-directory: backend
+              run: |
+                  touch .env
+                  echo DATABASE_URL=postgresql://srtest:pass@localhost/srtest_db >> .env
+                  echo AWS_ENDPOINT_URL=${{ secrets.AWS_ENDPOINT_URL }} >> .env
+                  echo AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} >> .env
+                  echo AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} >> .env
+                  echo IMAGE_BUCKET=${{ secrets.IMAGE_BUCKET }} >> .env
+                  echo AWS_REGION=$AWS_REGION >> .env
+            - name: Rust Build
+              working-directory: backend
+              run: cargo build --verbose
+            - name: Run tests
+              working-directory: backend
+              run: cargo test --verbose

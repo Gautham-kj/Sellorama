@@ -140,7 +140,7 @@ pub async fn create_item(
             let mut form_data = ItemForm {
                 title: "".to_string(),
                 content: "".to_string(),
-                price: rust_decimal::Decimal::new(0,0),
+                price: rust_decimal::Decimal::new(0, 0),
                 item_media: None,
             };
 
