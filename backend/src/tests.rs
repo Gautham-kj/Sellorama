@@ -45,15 +45,19 @@ mod tests {
         (app, api_url)
     }
 
-    #[tokio::test]
-
-    async fn signup_with_valid_creds() {
+    async fn start_app_instance()-> String{
         let (app, url) = create_app().await;
         let listener = tokio::net::TcpListener::bind(url.clone()).await.unwrap();
-        // let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
+        url
+    }
+
+    #[tokio::test]
+
+    async fn test_1_signup_with_valid_creds() {
+        let url = start_app_instance().await;
         let mut params = std::collections::HashMap::new();
         params.insert("username", "test_user");
         params.insert("password", "test_pass");
@@ -64,9 +68,41 @@ mod tests {
             .post(endpoint_url)
             .form(&params)
             .send()
+            .await.map_err(|err|println!("{}",err)).unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn test_2_login_with_invalid_creds(){
+        let url = start_app_instance().await;
+        let mut params = std::collections::HashMap::new();
+        params.insert("username", "test_user");
+        params.insert("password", "test_notpass");
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/user/login", url);
+        let res = client
+            .post(endpoint_url)
+            .form(&params)
+            .send()
             .await
-            .unwrap();
+        .unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_3_login_with_valid_creds(){
+        let url = start_app_instance().await;
+        let mut params = std::collections::HashMap::new();
+        params.insert("username", "test_user");
+        params.insert("password", "test_pass");
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/user/login", url);
+        let res = client
+            .post(endpoint_url)
+            .form(&params)
+            .send()
+            .await
+        .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::CREATED);
     }
 }
-// #[tokio::test]
