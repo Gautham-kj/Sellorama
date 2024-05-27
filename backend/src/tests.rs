@@ -45,7 +45,7 @@ mod tests {
         (app, api_url)
     }
 
-    async fn start_app_instance()-> String{
+    async fn start_app_instance() -> String {
         let (app, url) = create_app().await;
         let listener = tokio::net::TcpListener::bind(url.clone()).await.unwrap();
         tokio::spawn(async move {
@@ -68,12 +68,14 @@ mod tests {
             .post(endpoint_url)
             .form(&params)
             .send()
-            .await.map_err(|err|println!("{}",err)).unwrap();
+            .await
+            .map_err(|err| println!("{}", err))
+            .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::CREATED);
     }
 
     #[tokio::test]
-    async fn test_2_login_with_invalid_creds(){
+    async fn test_2_login_with_invalid_creds() {
         let url = start_app_instance().await;
         let mut params = std::collections::HashMap::new();
         params.insert("username", "test_user");
@@ -85,12 +87,12 @@ mod tests {
             .form(&params)
             .send()
             .await
-        .unwrap();
+            .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
-    async fn test_3_login_with_valid_creds(){
+    async fn test_3_login_with_valid_creds() {
         let url = start_app_instance().await;
         let mut params = std::collections::HashMap::new();
         params.insert("username", "test_user");
@@ -102,7 +104,7 @@ mod tests {
             .form(&params)
             .send()
             .await
-        .unwrap();
+            .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::CREATED);
     }
 }
