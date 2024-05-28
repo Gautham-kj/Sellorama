@@ -19,7 +19,7 @@ use sqlx::{prelude::FromRow, types::chrono, Pool, Postgres};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Serialize, Debug, FromRow, ToSchema)]
+#[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct User {
     user_id: Uuid,
     username: String,
@@ -49,13 +49,13 @@ pub struct UserWithSession {
     pub user_id: Uuid,
 }
 
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct CreateUserForm {
     username: String,
     email_id: String,
     password: String,
 }
-#[derive(FromRow, Serialize, Debug)]
+#[derive(FromRow, Serialize)]
 pub struct UserId {
     user_id: Uuid,
 }
@@ -65,14 +65,14 @@ pub struct GeneralResponse {
     pub detail: String,
 }
 
-#[derive(ToSchema, Serialize)]
+#[derive(ToSchema, Serialize, Deserialize)]
 pub struct UserResponse {
     detail: User,
 }
 
-#[derive(ToSchema, Serialize)]
+#[derive(ToSchema, Serialize, Deserialize)]
 pub struct SessionResponse {
-    detail: Session,
+    pub detail: Session,
 }
 
 #[utoipa::path(

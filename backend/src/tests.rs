@@ -4,6 +4,7 @@ mod tests {
     use crate::{dotenv, objects, AppState, PgPoolOptions};
 
     use axum::Router;
+    use reqwest::multipart;
 
     async fn create_app() -> (Router, String) {
         dotenv().ok();
@@ -73,9 +74,45 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::CREATED);
     }
+    #[tokio::test]
+
+    async fn test_2_signup_with_invalid_creds() {
+        let url = start_app_instance().await;
+        let mut params = std::collections::HashMap::new();
+        params.insert("username", "test_user");
+        params.insert("password", "test_pass");
+        params.insert("email_id", "test@testing.com");
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/user/signup", url);
+        let res = client
+            .post(endpoint_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|err| println!("{}", err))
+            .unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::CONFLICT);
+    }
 
     #[tokio::test]
-    async fn test_2_login_with_invalid_creds() {
+    async fn test_3_login_with_valid_creds() {
+        let url = start_app_instance().await;
+        let mut params = std::collections::HashMap::new();
+        params.insert("username", "test_user");
+        params.insert("password", "test_pass");
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/user/login", url);
+        let res = client
+            .post(endpoint_url)
+            .form(&params)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn test_4_login_with_invalid_creds() {
         let url = start_app_instance().await;
         let mut params = std::collections::HashMap::new();
         params.insert("username", "test_user");
@@ -92,18 +129,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_3_login_with_valid_creds() {
+    async fn test_5_create_post_without_image() {
         let url = start_app_instance().await;
-        let mut params = std::collections::HashMap::new();
-        params.insert("username", "test_user");
-        params.insert("password", "test_pass");
+        let session_id = {
+            let mut params = std::collections::HashMap::new();
+            params.insert("username", "test_user");
+            params.insert("password", "test_pass");
+            params.insert("email_id", "test@testing.com");
+            let client = reqwest::Client::new();
+            let endpoint_url = format!("http://{}/user/login", url);
+            let res = client
+                .post(endpoint_url)
+                .form(&params)
+                .send()
+                .await
+                .map_err(|_| assert!(false))
+                .unwrap();
+
+            let session: crate::SessionResponse =
+                serde_json::from_str(res.text().await.unwrap().as_str()).unwrap();
+            session.detail.session_id
+        };
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("session_id", session_id.to_string().parse().unwrap());
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+        let form = multipart::Form::new()
+            .text("title", "Item 1")
+            .text("content", "Details about item")
+            .text("price", "99.99");
         let client = reqwest::Client::new();
-        let endpoint_url = format!("http://{}/user/login", url);
+        let endpoint_url = format!("http://{}/item/create", url);
         let res = client
             .post(endpoint_url)
-            .form(&params)
+            .headers(headers)
+            .multipart(form)
             .send()
             .await
+            .map_err(|_| assert!(false))
             .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::CREATED);
     }
