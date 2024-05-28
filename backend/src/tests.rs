@@ -55,6 +55,25 @@ mod tests {
         url
     }
 
+    async fn get_session_id(url: String) -> uuid::Uuid {
+        let mut params = std::collections::HashMap::new();
+        params.insert("username", "test_user");
+        params.insert("password", "test_pass");
+        params.insert("email_id", "test@testing.com");
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/user/login", url);
+        let res = client
+            .post(endpoint_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|_| assert!(false))
+            .unwrap();
+
+        let session: crate::SessionResponse =
+            serde_json::from_str(res.text().await.unwrap().as_str()).unwrap();
+        session.detail.session_id
+    }
     #[tokio::test]
 
     async fn test_1_signup_with_valid_creds() {
@@ -131,25 +150,7 @@ mod tests {
     #[tokio::test]
     async fn test_5_create_post_without_image() {
         let url = start_app_instance().await;
-        let session_id = {
-            let mut params = std::collections::HashMap::new();
-            params.insert("username", "test_user");
-            params.insert("password", "test_pass");
-            params.insert("email_id", "test@testing.com");
-            let client = reqwest::Client::new();
-            let endpoint_url = format!("http://{}/user/login", url);
-            let res = client
-                .post(endpoint_url)
-                .form(&params)
-                .send()
-                .await
-                .map_err(|_| assert!(false))
-                .unwrap();
-
-            let session: crate::SessionResponse =
-                serde_json::from_str(res.text().await.unwrap().as_str()).unwrap();
-            session.detail.session_id
-        };
+        let session_id = get_session_id(url.clone()).await;
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("session_id", session_id.to_string().parse().unwrap());
         headers.insert(
@@ -160,6 +161,37 @@ mod tests {
             .text("title", "Item 1")
             .text("content", "Details about item")
             .text("price", "99.99");
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/item/create", url);
+        let res = client
+            .post(endpoint_url)
+            .headers(headers)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|_| assert!(false))
+            .unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn test_6_create_post_with_image() {
+        let url = start_app_instance().await;
+        let session_id = get_session_id(url.clone()).await;
+        //headers
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("session_id", session_id.to_string().parse().unwrap());
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+        let image_fd = std::fs::read("./test_assets/sellorama_test.jpg").expect("file not found");
+        let part = multipart::Part::bytes(image_fd).file_name("image.jpg");
+        let form = multipart::Form::new()
+            .text("title", "Item with image")
+            .text("content", "Details about item with image")
+            .text("price", "1099.99")
+            .part("item_media", part);
         let client = reqwest::Client::new();
         let endpoint_url = format!("http://{}/item/create", url);
         let res = client
