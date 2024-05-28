@@ -225,8 +225,7 @@ pub async fn create_item(
                                     )
                                     .await
                                     {
-                                        Err(e) => {
-                                            println!("{:?}",e);
+                                        Err(_e) => {
                                             return (
                                                 StatusCode::UNPROCESSABLE_ENTITY,
                                                 Json(json!(GeneralResponse {

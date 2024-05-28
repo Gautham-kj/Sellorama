@@ -42,4 +42,4 @@ jobs:
                   echo AWS_REGION=${{ secrets.AWS_REGION }}>> .env
             - name: Run tests
               working-directory: backend
-              run: cargo test --verbose -- --test-threads=1 --nocapture
+              run: cargo test --verbose -- --test-threads=1
