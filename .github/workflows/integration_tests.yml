@@ -39,7 +39,7 @@ jobs:
                   echo AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} >> .env
                   echo AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} >> .env
                   echo IMAGE_BUCKET=${{ secrets.IMAGE_BUCKET }} >> .env
-                  echo AWS_REGION=$AWS_REGION >> .env
+                  echo AWS_REGION=${{ secrets.AWS_REGION }}>> .env
             - name: Run tests
               working-directory: backend
               run: cargo test --verbose -- --test-threads=1 --nocapture
