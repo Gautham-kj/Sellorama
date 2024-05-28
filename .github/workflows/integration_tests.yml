@@ -41,4 +41,4 @@ jobs:
                   echo AWS_REGION=$AWS_REGION >> .env
             - name: Run tests
               working-directory: backend
-              run: cargo test --verbose -- --test-threads=1
+              run: cargo test --verbose -- --test-threads=1 --nocapture
