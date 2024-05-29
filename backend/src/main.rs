@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use tower_http::cors::{Any, CorsLayer};
+// use tokio::runtime::{Runtime,Builder};
 
 use chrono::Duration;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -23,6 +24,7 @@ use utoipa_swagger_ui::SwaggerUi;
 mod cart;
 mod item;
 mod objects;
+mod tests;
 mod user;
 
 use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
@@ -154,7 +156,7 @@ async fn main() {
 
     // Getting env variables
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let api_url = std::env::var("API_URL").expect("API_URL must be set");
+    let api_url = std::env::var("API_URL").unwrap_or_else(|_| "localhost:9000".to_string());
     // Getting S3 env variables
     let s3_access_key = std::env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY must be set");
     let s3_secret_access_key =
@@ -192,6 +194,26 @@ async fn main() {
         image_bucket: image_bucket,
     };
 
+    let listener = tokio::net::TcpListener::bind(api_url).await.unwrap();
+    axum::serve(listener, app(appstate)).await.unwrap();
+}
+
+#[utoipa::path(
+    get,
+    path = "/",
+    responses(
+        (status = 200, body=[Ping])
+    )
+)]
+async fn ping() -> Json<Ping> {
+    println!("Server was pinged!");
+    let ping = Ping {
+        response: "Pong".to_string(),
+    };
+    let response = Json(ping);
+    response
+}
+pub fn app(appstate: AppState) -> Router {
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
@@ -223,8 +245,6 @@ async fn main() {
         .route("/update", post(update_cart_item))
         .with_state(appstate.clone());
 
-    // let comment_router = Router::new().with_state(dbpool.clone());
-
     let app = Router::new()
         .route("/", get(ping))
         .nest("/cart", cart_router)
@@ -234,26 +254,5 @@ async fn main() {
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"))
         .layer(cors);
-
-    let listener = tokio::net::TcpListener::bind(api_url).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    app
 }
-
-#[utoipa::path(
-    get,
-    path = "/",
-    responses(
-        (status = 200, body=[Ping])
-    )
-)]
-async fn ping() -> Json<Ping> {
-    println!("Server was pinged!");
-    let ping = Ping {
-        response: "Pong".to_string(),
-    };
-    let response = Json(ping);
-    response
-}
-
-#[tokio::test]
-async fn user_login_test() {}
