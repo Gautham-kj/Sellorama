@@ -1,11 +1,10 @@
 CREATE TABLE IF NOT EXISTS "order" (
-    order_id UUID DEFAULT uuid_generate_v4(),
+    order_id UUID UNIQUE DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL,
     order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     dispatched BOOLEAN NOT NULL DEFAULT FALSE,
     FOREIGN KEY (user_id) REFERENCES "user"(user_id),
-    FOREIGN KEY (item_id) REFERENCES "item"(item_id),
-    PRIMARY KEY (order_id, user_id, item_id)
+    PRIMARY KEY (order_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS "order_items"(
