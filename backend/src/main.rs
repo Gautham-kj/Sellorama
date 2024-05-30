@@ -27,7 +27,7 @@ mod objects;
 mod tests;
 mod user;
 
-use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
+use cart::{add_item, check_cart, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use item::{
     create_item, delete_item, edit_item, edit_stock, get_item, get_items, rate_item,
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
@@ -105,7 +105,8 @@ title = "Sellorama"),
         item::search_suggestions,
         cart::get_cart,
         cart::add_item,
-        cart::update_cart_item
+        cart::update_cart_item,
+        cart::check_cart
     ),
     components(
         schemas(
@@ -243,6 +244,7 @@ pub fn app(appstate: AppState) -> Router {
         .route("/", get(get_cart))
         .route("/item", post(add_item))
         .route("/update", post(update_cart_item))
+        .route("/subcheckout", get(check_cart))
         .with_state(appstate.clone());
 
     let app = Router::new()

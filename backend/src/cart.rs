@@ -254,3 +254,78 @@ pub async fn update_cart_item(
         ),
     }
 }
+#[utoipa::path(
+    get,
+    path = "/cart/subcheckout",
+    security (("session_id" = [])),
+    responses(
+        (status = 200 , body = GeneralResponse),
+        (status = 401 , body = GeneralResponse),
+        (status = 500 , body = GeneralResponse),
+        (status = 409 , body = CartResponse)
+    )
+)]
+/// SubCheckout Cart
+///
+/// Checking whether items in the cart are still in stock.
+pub async fn check_cart(headers: HeaderMap, state: State<AppState>) -> impl IntoResponse {
+    let session_id;
+    match extract_session_header(headers).await {
+        Some(session) => session_id = session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!(GeneralResponse {
+                    detail: "Invalid Credentials".to_string()
+                })),
+            )
+        }
+    }
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user) => {
+            let query = r#"DELETE FROM "cart" 
+            where
+            stock_validation("item_id","quantity") IS NOT TRUE 
+            AND
+            "cart_id" = $1 RETURNING "item_id","quantity"; 
+                "#;
+            match sqlx::query_as::<_, CartItem>(query)
+                .bind(user.user_id)
+                .fetch_all(&state.db_pool)
+                .await
+                .map_err(|err| {
+                    println!("{}", err);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!(GeneralResponse {
+                            detail: "Server Error".to_string()
+                        })),
+                    );
+                }) {
+                Ok(items) => match items.len() {
+                    0 => (
+                        StatusCode::OK,
+                        Json(json!(GeneralResponse {
+                            detail: "Items In Stock, Proceed to Checkout".to_string()
+                        })),
+                    ),
+                    _ => (
+                        StatusCode::CONFLICT,
+                        Json(json!(CartResponse {
+                            detail: Cart { items: items }
+                        })),
+                    ),
+                },
+                Err(e) => e,
+            }
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!(GeneralResponse {
+                detail: "Invalid Credentials".to_string()
+            })),
+        ),
+    }
+}
+
+
