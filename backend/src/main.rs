@@ -22,12 +22,14 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 mod cart;
+mod errors;
 mod item;
 mod objects;
 mod tests;
 mod user;
 
 use cart::{add_item, check_cart, get_cart, update_cart_item, Cart, CartItem, CartResponse};
+use errors::ErrorResponse;
 use item::{
     create_item, delete_item, edit_item, edit_stock, get_item, get_items, rate_item,
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
@@ -131,7 +133,8 @@ title = "Sellorama"),
             Cart,
             CartItem,
             CartResponse,
-            Filters,Order
+            Filters,Order,
+            ErrorResponse
         )
     ),
     modifiers(&SecurityAddon)
