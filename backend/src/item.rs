@@ -194,7 +194,7 @@ pub async fn create_item(
                             .bind(vec![item_response.item_id; media_ids.len()])
                             .fetch_optional(&mut *txn)
                             .await
-                            .unwrap()
+                            .map_err(|_| MyError::InternalServerError)?
                         {
                             Some(_response) => {
                                 for (index, media_item) in media.iter().enumerate() {
@@ -380,8 +380,9 @@ pub async fn get_item(
                 .bind(item_id)
                 .fetch_one(&state.db_pool)
                 .await
+                .map_err(|_| MyError::InternalServerError)?
             {
-                Ok(response) => {
+                response => {
                     let media_urls = get_presigned_urls_for_items(
                         vec![response.item_id],
                         &state.db_pool,
@@ -433,7 +434,6 @@ pub async fn get_item(
                         )),
                     }
                 }
-                Err(_e) => Err(MyError::NotFound),
             }
         }
         None => Err(MyError::UnauthorizedError),
@@ -462,8 +462,9 @@ pub async fn get_items(
     match sqlx::query_as::<_, Item>(query.as_str())
         .fetch_all(&state.db_pool)
         .await
+        .map_err(|_| MyError::InternalServerError)?
     {
-        Ok(result) => {
+        result => {
             let mut response: Vec<ItemResponse> = vec![];
             let items: Vec<Uuid> = result
                 .iter()
@@ -498,7 +499,6 @@ pub async fn get_items(
                 Json(json!(PageResponse { items: response })),
             ))
         }
-        Err(_e) => Err(MyError::InternalServerError),
     }
 }
 
@@ -536,22 +536,20 @@ pub async fn rate_item(
                 .bind(form_data.content)
                 .fetch_optional(&state.db_pool)
                 .await
-                .map_err(|_|MyError::InternalServerError)?
-
+                .map_err(|_| MyError::InternalServerError)?
             {
-                    Some(_t) => Ok((
-                        StatusCode::CREATED,
-                        Json(json!(GeneralResponse {
-                            detail: "Comment Created".to_string()
-                        })),
-                    )),
-                    None => Err(MyError::CustomError((
-                        409,
-                        "Cannot rate one's own item".to_string(),
-                    ))),
-                }
-            
-        },
+                Some(_t) => Ok((
+                    StatusCode::CREATED,
+                    Json(json!(GeneralResponse {
+                        detail: "Comment Created".to_string()
+                    })),
+                )),
+                None => Err(MyError::CustomError((
+                    409,
+                    "Cannot rate one's own item".to_string(),
+                ))),
+            }
+        }
         None => Err(MyError::UnauthorizedError),
     }
 }
@@ -590,15 +588,15 @@ pub async fn edit_stock(
                 .await
                 .map_err(|_| MyError::InternalServerError)?
             {
-                    Some(_t) => Ok((
-                        StatusCode::CREATED,
-                        Json(json!(GeneralResponse {
-                            detail: "Stock updated".to_string(),
-                        })),
-                    )),
-                    None => Err(MyError::UnauthorizedError),
-
-        }},
+                Some(_t) => Ok((
+                    StatusCode::CREATED,
+                    Json(json!(GeneralResponse {
+                        detail: "Stock updated".to_string(),
+                    })),
+                )),
+                None => Err(MyError::UnauthorizedError),
+            }
+        }
         None => Err(MyError::UnauthorizedError),
     }
 }
@@ -626,13 +624,12 @@ pub async fn search_suggestions(
         .bind(&search_query.query)
         .fetch_all(&state.db_pool)
         .await
-        .map_err(|_| MyError::InternalServerError)
+        .map_err(|_| MyError::InternalServerError)?
     {
-        Ok(response) => Ok((
+        response => Ok((
             StatusCode::OK,
             Json(json!(SearchResult { keywords: response })),
         )),
-        Err(e) => Err(e),
     }
 }
 
@@ -777,8 +774,7 @@ async fn get_presigned_urls_for_items(
                         format!("{}.jpg", media_id).as_str(),
                         3600,
                     )
-                    .await
-                    .unwrap();
+                    .await?;
                     vector.push(url);
                 }
                 None => {
@@ -788,8 +784,7 @@ async fn get_presigned_urls_for_items(
                         format!("{}.jpg", media_id).as_str(),
                         3600,
                     )
-                    .await
-                    .unwrap();
+                    .await?;
                     item_with_media.insert(media_item.item_id, vec![url]);
                 }
             },
