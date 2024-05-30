@@ -7,10 +7,12 @@ use serde::Serialize;
 use serde_json::json;
 use utoipa::{ToResponse, ToSchema};
 pub enum MyError {
+    NotFound,
     InternalServerError,
     ConflictError,
     UnauthorizedError,
     UnproccessableEntityError,
+    BadRequest,
     CustomError((u16, String)),
 }
 
@@ -22,6 +24,8 @@ pub struct ErrorResponse {
 impl IntoResponse for MyError {
     fn into_response(self) -> Response {
         let (statuscode, body) = match self {
+            MyError::NotFound => (StatusCode::NOT_FOUND, "Not Found".to_string()),
+            MyError::BadRequest => (StatusCode::BAD_REQUEST, "Bad Request".to_string()),
             MyError::ConflictError => (StatusCode::CONFLICT, "Conflict Error".to_string()),
             MyError::InternalServerError => (
                 StatusCode::INTERNAL_SERVER_ERROR,

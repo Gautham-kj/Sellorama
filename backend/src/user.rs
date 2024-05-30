@@ -1,3 +1,4 @@
+use crate::errors::MyError;
 use crate::AppState;
 use crate::Duration;
 use argon2::PasswordHash;
@@ -11,6 +12,7 @@ use axum::{
     response::IntoResponse,
     Form, Json,
 };
+
 use chrono::{NaiveDateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -414,12 +416,12 @@ pub async fn check_session_validity(
     }
 }
 
-pub async fn extract_session_header(headers: HeaderMap) -> Option<uuid::Uuid> {
+pub async fn extract_session_header(headers: HeaderMap) -> Result<uuid::Uuid, MyError> {
     let session;
     match headers.get("session_id") {
         Some(session_id) => session = session_id,
-        None => return None,
+        None => return Err(MyError::UnauthorizedError),
     }
     let session_id = uuid::Uuid::parse_str(session.to_str().unwrap()).unwrap();
-    return Some(session_id);
+    Ok(session_id)
 }
