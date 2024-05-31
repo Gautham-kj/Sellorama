@@ -216,22 +216,19 @@ pub async fn check_cart(
                 .bind(user.user_id)
                 .fetch_all(&state.db_pool)
                 .await
-                .map_err(|_| MyError::InternalServerError)
+                .map_err(|_| MyError::InternalServerError)?
             {
-                Ok(items) => match items.len() {
+                items => match items.len() {
                     0 => Ok((
                         StatusCode::OK,
                         Json(json!(GeneralResponse {
                             detail: "Items In Stock, Proceed to Checkout".to_string()
                         })),
                     )),
-                    _ => Err(MyError::ConflictError),
+                    _ => Ok((StatusCode::CONFLICT, Json(json!(Cart { items: items })))),
                 },
-                Err(e) => Err(e),
             }
         }
         None => Err(MyError::UnauthorizedError),
     }
 }
-
-// pub async fn create_order(headers: HeaderMap, state: State<AppState>) -> impl IntoResponse {}

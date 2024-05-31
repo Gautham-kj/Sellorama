@@ -25,9 +25,11 @@ mod cart;
 mod errors;
 mod item;
 mod objects;
+mod order;
 mod tests;
 mod user;
 
+use order::create_order_address;
 use cart::{add_item, check_cart, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use errors::ErrorResponse;
 use item::{
@@ -250,11 +252,16 @@ pub fn app(appstate: AppState) -> Router {
         .route("/subcheckout", get(check_cart))
         .with_state(appstate.clone());
 
+    let order_router = Router::new()
+        .route("/address", post(create_order_address))
+        .with_state(appstate.clone());
+
     let app = Router::new()
         .route("/", get(ping))
         .nest("/cart", cart_router)
         .nest("/user", user_router)
         .nest("/item", item_router)
+        .nest("/order", order_router)
         .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"))
