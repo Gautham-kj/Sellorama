@@ -42,7 +42,7 @@ pub struct OrderDetails {
     )
 )]
 /// Create Order
-/// 
+///
 /// Endpoint to create an order from the items in the user's cart
 pub async fn create_order(
     headers: HeaderMap,
@@ -69,26 +69,30 @@ pub async fn create_order(
                 items => match items.len() {
                     0 => {
                         let query = r#"
-                        WITH cart_items AS (
+                        WITH "cart_items" AS (
                             DELETE FROM "cart" 
                             where
                             stock_validation("item_id","quantity") IS TRUE 
                             AND
                             "cart_id" = $1 RETURNING "item_id","quantity" 
                         ),
-                        with order_details as (
+                        "order_details" as (
                             INSERT INTO "order"("user_id","address_id")
                             VALUES($1,$2) RETURNING "order_id","order_date"
                         ),
-                        INSERT INTO "order_item"("order_id","item_id","quantity")
-                        SELECT order_details."order_id","item_id","quantity" FROM cart_items RETURNING "order_id",order_details."order_date";
+                        result AS(
+                        INSERT INTO "order_items"("order_id","item_id","quantity")
+                        SELECT "order_id","item_id","quantity" FROM cart_items,order_details RETURNING "order_id"
+                        )
+                        SELECT result."order_id",order_details."order_date" from result,order_details;
                         "#;
                         match sqlx::query_as::<_, OrderDetails>(query)
                             .bind(user.user_id)
                             .bind(form_data.address_id)
                             .fetch_optional(&mut *txn)
                             .await
-                            .map_err(|_| MyError::InternalServerError)?
+                            .map_err(|e|{println!("{e}");
+                        return MyError::InternalServerError;} )?
                         {
                             Some(order) => {
                                 txn.commit().await.unwrap();
