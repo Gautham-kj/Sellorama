@@ -80,6 +80,9 @@ pub async fn create_order(
                             INSERT INTO "order"("user_id","address_id")
                             VALUES($1,$2) RETURNING "order_id","order_date"
                         ),
+                        "stock_updation" as (
+                            UPDATE "stock" set "quantity" = "stock"."quantity" - cart_items."quantity" FROM cart_items WHERE cart_items."item_id" = stock."item_id"
+                        ),
                         result AS(
                         INSERT INTO "order_items"("order_id","item_id","quantity")
                         SELECT "order_id","item_id","quantity" FROM cart_items,order_details RETURNING "order_id"
@@ -124,3 +127,5 @@ pub async fn create_order(
         None => Err(MyError::UnauthorizedError),
     }
 }
+
+// pub async fn dispatch
