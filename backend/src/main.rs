@@ -29,7 +29,6 @@ mod order;
 mod tests;
 mod user;
 
-use order::create_order_address;
 use cart::{add_item, check_cart, get_cart, update_cart_item, Cart, CartItem, CartResponse};
 use errors::ErrorResponse;
 use item::{
@@ -37,9 +36,11 @@ use item::{
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
     SearchQuery, SearchResult,
 };
+use order::{create_order, OrderDetails, OrderForm};
 use user::{
-    get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
-    SessionResponse, User, UserLogin, UserResponse, UserWithSession,
+    create_user_address, get_user_by_id, logout, signup, user_login, Address, AddressId,
+    CreateUserForm, GeneralResponse, Session, SessionResponse, User, UserLogin, UserResponse,
+    UserWithSession,
 };
 
 #[derive(Deserialize, PartialEq, ToSchema)]
@@ -99,6 +100,7 @@ title = "Sellorama"),
         user::get_user_by_id,
         user::user_login,
         user::logout,
+        user::create_user_address,
         item::create_item,
         item::edit_item,
         item::get_item,
@@ -117,6 +119,8 @@ title = "Sellorama"),
             Ping,
             User,
             CreateUserForm,
+            AddressId,
+            Address,
             UserLogin,
             Session,
             UserWithSession,
@@ -135,7 +139,10 @@ title = "Sellorama"),
             Cart,
             CartItem,
             CartResponse,
-            Filters,Order,
+            Filters,
+            Order,
+            OrderDetails,
+            OrderForm,
             ErrorResponse
         )
     ),
@@ -231,6 +238,7 @@ pub fn app(appstate: AppState) -> Router {
         .route("/signup", post(signup))
         .route("/logout", post(logout))
         .route("/:username", get(get_user_by_id))
+        .route("/address", post(create_user_address))
         .with_state(appstate.clone());
 
     let item_router = Router::new()
@@ -253,7 +261,7 @@ pub fn app(appstate: AppState) -> Router {
         .with_state(appstate.clone());
 
     let order_router = Router::new()
-        .route("/address", post(create_order_address))
+        .route("/create", post(create_order))
         .with_state(appstate.clone());
 
     let app = Router::new()
