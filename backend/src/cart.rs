@@ -22,7 +22,7 @@ pub struct CartItem {
 
 #[derive(FromRow, ToSchema, Serialize)]
 pub struct Cart {
-    items: Vec<CartItem>,
+    pub items: Vec<CartItem>,
 }
 
 #[derive(FromRow, ToSchema, Serialize)]
