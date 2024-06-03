@@ -1,3 +1,15 @@
+CREATE TABLE IF NOT EXISTS "address" (
+    user_id UUID NOT NULL,
+    address_id UUID UNIQUE DEFAULT uuid_generate_v4(),
+    address_line_1 VARCHAR(255) NOT NULL,
+    address_line_2 VARCHAR(255),
+    city VARCHAR(255) NOT NULL,
+    country VARCHAR(255) NOT NULL,
+    pincode VARCHAR(255) NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES "user"(user_id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, address_id)
+);
+
 CREATE TABLE IF NOT EXISTS "order" (
     order_id UUID UNIQUE DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL,
@@ -16,16 +28,4 @@ CREATE TABLE IF NOT EXISTS "order_items"(
     FOREIGN KEY (order_id) REFERENCES "order"(order_id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES "item"(item_id) ON DELETE CASCADE,
     PRIMARY KEY (order_id, item_id)
-);
-
-CREATE TABLE IF NOT EXISTS "address" (
-    user_id UUID NOT NULL,
-    address_id UUID DEFAULT uuid_generate_v4(),
-    address_line_1 VARCHAR(255) NOT NULL,
-    address_line_2 VARCHAR(255),
-    city VARCHAR(255) NOT NULL,
-    country VARCHAR(255) NOT NULL,
-    pincode VARCHAR(255) NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES "user"(user_id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, address_id)
 );
