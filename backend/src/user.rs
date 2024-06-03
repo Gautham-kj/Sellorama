@@ -352,7 +352,7 @@ pub async fn create_user_address(
         Some(user) => {
             let query = r#"
                 INSERT INTO "address" ("user_id","address_line_1", "address_line_2", "city", "country", "pincode")
-                VALUES ($1, $2, $3, $4, $5)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING "address_id";
             "#;
             match sqlx::query_as::<_, AddressId>(query)
