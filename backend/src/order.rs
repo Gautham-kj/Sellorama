@@ -14,69 +14,109 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(FromRow, ToSchema, Serialize,Deserialize)]
-pub struct Address {
-    address_line_1: String,
-    address_line_2: Option<String>,
-    city: String,
-    country: String,
-    pincode: String,
+#[derive(FromRow, ToSchema, Deserialize, Serialize)]
+pub struct OrderForm {
+    ///address_id of the user to deliver the order
+    address_id: Uuid,
 }
 
 #[derive(FromRow, ToSchema, Serialize)]
-pub struct Order {
+pub struct OrderDetails {
+    ///order_id of the order
     order_id: Uuid,
-    address_id: Uuid,
+    ///order_date of the order
+    order_date: chrono::NaiveDateTime,
 }
 
-#[derive(FromRow, ToSchema, Serialize)]
-pub struct AddressId {
-    address_id: Uuid,
-}
-
-
-#[utoipa::path(post,
-    path = "/order/address",
+#[utoipa::path(
+    post,
+    path = "/order/create",
     security(
-        ("session_id"=[])
+        ("session_id" = [])
     ),
     responses(
-        (status =200 ,body = GeneralResponse),
-        (status =500 ,body = GeneralResponse),
-        (status =401 ,body = GeneralResponse),
+        (status = 201 , body = OrderDetails),
+        (status = 401, body = GeneralResponse),
+        (status = 409, body = CartResponse),
+        (status = 500, body = GeneralResponse)
     )
 )]
-pub async fn create_order_address(
+/// Create Order
+/// 
+/// Endpoint to create an order from the items in the user's cart
+pub async fn create_order(
     headers: HeaderMap,
     state: State<AppState>,
-    Form(form_data): Form<Address>,
+    Form(form_data): Form<OrderForm>,
 ) -> Result<impl IntoResponse, MyError> {
     let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(user) => {
+            let mut txn = state.db_pool.begin().await.unwrap();
             let query = r#"
-                INSERT INTO "address" ("user_id","address_line_1", "address_line_2", "city", "country", "pincode")
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING "address_id";
+                DELETE FROM "cart" 
+                where
+                stock_validation("item_id","quantity") IS NOT TRUE 
+                AND
+                "cart_id" = $1 RETURNING "item_id","quantity"; 
             "#;
-            match sqlx::query_as::<_, AddressId>(query)
+            match sqlx::query_as::<_, crate::CartItem>(query)
                 .bind(user.user_id)
-                .bind(form_data.address_line_1)
-                .bind(form_data.address_line_2)
-                .bind(form_data.city)
-                .bind(form_data.country)
-                .bind(form_data.pincode)
-                .fetch_one(&state.db_pool)
+                .fetch_all(&mut *txn)
                 .await
                 .map_err(|_| MyError::InternalServerError)?
             {
-                response => Ok((StatusCode::OK, Json(json!(response)))),
+                items => match items.len() {
+                    0 => {
+                        let query = r#"
+                        WITH cart_items AS (
+                            DELETE FROM "cart" 
+                            where
+                            stock_validation("item_id","quantity") IS TRUE 
+                            AND
+                            "cart_id" = $1 RETURNING "item_id","quantity" 
+                        ),
+                        with order_details as (
+                            INSERT INTO "order"("user_id","address_id")
+                            VALUES($1,$2) RETURNING "order_id","order_date"
+                        ),
+                        INSERT INTO "order_item"("order_id","item_id","quantity")
+                        SELECT order_details."order_id","item_id","quantity" FROM cart_items RETURNING "order_id",order_details."order_date";
+                        "#;
+                        match sqlx::query_as::<_, OrderDetails>(query)
+                            .bind(user.user_id)
+                            .bind(form_data.address_id)
+                            .fetch_optional(&mut *txn)
+                            .await
+                            .map_err(|_| MyError::InternalServerError)?
+                        {
+                            Some(order) => {
+                                txn.commit().await.unwrap();
+                                Ok((StatusCode::CREATED, Json(json!(order))))
+                            }
+                            None => {
+                                txn.rollback()
+                                    .await
+                                    .map_err(|_| MyError::InternalServerError)?;
+                                Ok((
+                                    StatusCode::CONFLICT,
+                                    Json(json!(crate::Cart { items: items })),
+                                ))
+                            }
+                        }
+                    }
+                    _ => {
+                        txn.rollback()
+                            .await
+                            .map_err(|_| MyError::InternalServerError)?;
+                        Ok((
+                            StatusCode::CONFLICT,
+                            Json(json!(crate::Cart { items: items })),
+                        ))
+                    }
+                },
             }
         }
         None => Err(MyError::UnauthorizedError),
     }
 }
-
-// pub async create_order(headers:HeaderMap,state: State<AppState>) ->  Result<impl IntoResponse, MyError> {
-
-// }
