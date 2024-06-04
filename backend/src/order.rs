@@ -1,6 +1,7 @@
 use crate::errors::MyError;
-use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
+use crate::{user::{check_session_validity, extract_session_header, GeneralResponse}};
 use crate::AppState;
+use crate::cart::CartItem;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -28,6 +29,11 @@ pub struct OrderDetails {
     order_date: chrono::NaiveDateTime,
 }
 
+#[derive(FromRow, ToSchema, Deserialize, Serialize)]
+pub struct CartError{
+    detail: Vec<CartItem>
+}
+
 #[utoipa::path(
     post,
     path = "/order/create",
@@ -37,7 +43,7 @@ pub struct OrderDetails {
     responses(
         (status = 201 , body = OrderDetails),
         (status = 401, body = GeneralResponse),
-        (status = 409, body = CartResponse),
+        (status = 409, body = CartError),
         (status = 500, body = GeneralResponse)
     )
 )]
@@ -107,7 +113,7 @@ pub async fn create_order(
                                     .map_err(|_| MyError::InternalServerError)?;
                                 Ok((
                                     StatusCode::CONFLICT,
-                                    Json(json!(crate::Cart { items: items })),
+                                    Json(json!(CartError{ detail: items })),
                                 ))
                             }
                         }
@@ -118,7 +124,7 @@ pub async fn create_order(
                             .map_err(|_| MyError::InternalServerError)?;
                         Ok((
                             StatusCode::CONFLICT,
-                            Json(json!(crate::Cart { items: items })),
+                            Json(json!(CartError{ detail: items })),
                         ))
                     }
                 },
