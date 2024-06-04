@@ -36,11 +36,9 @@ use item::{
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
     SearchQuery, SearchResult,
 };
-use order::{create_order, OrderDetails, OrderForm};
+use order::{create_order,CartError, OrderDetails, OrderForm};
 use user::{
-    create_user_address, get_user_by_id, logout, signup, user_login, Address, AddressId,
-    CreateUserForm, GeneralResponse, Session, SessionResponse, User, UserLogin, UserResponse,
-    UserWithSession,
+    create_user_address, get_user_by_id, get_user_orders, logout, signup, user_login, Address, AddressId, CreateUserForm, GeneralResponse, Session, SessionResponse, User, UserLogin, UserResponse, UserWithSession
 };
 
 #[derive(Deserialize, PartialEq, ToSchema)]
@@ -101,6 +99,7 @@ title = "Sellorama"),
         user::user_login,
         user::logout,
         user::create_user_address,
+        user::get_user_orders,
         order::create_order,
         item::create_item,
         item::edit_item,
@@ -144,7 +143,9 @@ title = "Sellorama"),
             Order,
             OrderDetails,
             OrderForm,
-            ErrorResponse
+            ErrorResponse,
+            CartError,
+            CartItem
         )
     ),
     modifiers(&SecurityAddon)
@@ -240,6 +241,7 @@ pub fn app(appstate: AppState) -> Router {
         .route("/logout", post(logout))
         .route("/:username", get(get_user_by_id))
         .route("/address", post(create_user_address))
+        .route("/myorders", get(get_user_orders))
         .with_state(appstate.clone());
 
     let item_router = Router::new()

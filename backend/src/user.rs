@@ -342,6 +342,9 @@ pub async fn logout(state: State<AppState>, Form(form_data): Form<Session>) -> i
         (status =401 ,body = GeneralResponse),
     )
 )]
+/// Create User Address
+/// 
+/// Endpoint to create a new address for the user
 pub async fn create_user_address(
     headers: HeaderMap,
     state: State<AppState>,
@@ -363,6 +366,46 @@ pub async fn create_user_address(
                 .bind(form_data.country)
                 .bind(form_data.pincode)
                 .fetch_one(&state.db_pool)
+                .await
+                .map_err(|_| MyError::InternalServerError)?
+            {
+                response => Ok((StatusCode::OK, Json(json!(response)))),
+            }
+        }
+        None => Err(MyError::UnauthorizedError),
+    }
+}
+
+
+#[utoipa::path(
+    get,
+    path = "/user/orders",
+    security(
+        ("session_id" = [])
+    ),
+    responses(
+        (status = 200, body = Vec<crate::OrderDetails>),
+        (status = 401, body = GeneralResponse),
+        (status = 500, body = GeneralResponse)
+    )
+)]
+/// Get User Orders
+/// 
+/// Endpoint to get all the orders placed by the user
+pub async fn get_user_orders(
+    headers: HeaderMap,
+    state: State<AppState>,
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user) => {
+            let query = r#"
+                SELECT "order_id", "order_date" FROM "order"
+                WHERE "user_id" = $1;
+            "#;
+            match sqlx::query_as::<_, crate::OrderDetails>(query)
+                .bind(user.user_id)
+                .fetch_all(&state.db_pool)
                 .await
                 .map_err(|_| MyError::InternalServerError)?
             {
