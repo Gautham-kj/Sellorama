@@ -55,7 +55,7 @@ pub struct MyOrderDetails {
     dispatched: bool,
 }
 
-#[derive(Deserialize, Serialize,ToSchema,IntoParams)]
+#[derive(Deserialize, Serialize, ToSchema, IntoParams)]
 pub struct MyOrderQuery {
     page_no: Option<u32>,
     take: Option<u32>,

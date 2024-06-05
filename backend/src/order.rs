@@ -30,7 +30,7 @@ pub struct OrderDetails {
     order_date: chrono::NaiveDateTime,
 }
 
-#[derive(FromRow, ToSchema, Deserialize, Serialize,IntoParams)]
+#[derive(FromRow, ToSchema, Deserialize, Serialize, IntoParams)]
 pub struct OrderQuery {
     ///page_no of the orders
     page_no: Option<u32>,
@@ -39,7 +39,7 @@ pub struct OrderQuery {
     ///dispatched status of the orders
     dispatched: Option<bool>,
     ///Order of the orders
-    order: Option<bool>
+    order: Option<bool>,
 }
 
 #[derive(FromRow, ToSchema, Serialize)]
@@ -169,7 +169,6 @@ pub async fn create_order(
     }
 }
 
-
 #[utoipa::path(
     get,
     path = "/order/orders",
@@ -186,7 +185,7 @@ pub async fn create_order(
     ),
 )]
 /// Get Orders
-/// 
+///
 /// Endpoint to get all the orders placed for a user
 pub async fn get_orders(
     headers: HeaderMap,
@@ -215,14 +214,14 @@ fn paginate_orders(pagination: OrderQuery) -> String {
         take: u32,
         offset: u32,
         dispatched: bool,
-        order:String
+        order: String,
     }
     // Default values
     let mut query_params = PaginationParams {
         take: 10,
         offset: 0,
         dispatched: false,
-        order:"DESC".to_string()
+        order: "DESC".to_string(),
     };
     // Set values from pagination
     match pagination.take {
@@ -247,7 +246,7 @@ fn paginate_orders(pagination: OrderQuery) -> String {
         Some(order) => match order {
             true => query_params.order = "ASC".to_string(),
             false => query_params.order = "DESC".to_string(),
-        }
+        },
         None => query_params.order = "DESC".to_string(),
     }
     format!(
@@ -257,6 +256,6 @@ fn paginate_orders(pagination: OrderQuery) -> String {
         (SELECT * FROM "order" ) as t2
         ON t1."order_id" = t2."order_id"
         WHERE "dispatched" = {} ORDER BY t2."order_date" {} LIMIT {} OFFSET {};"#,
-        query_params.dispatched,query_params.order, query_params.take, query_params.offset
+        query_params.dispatched, query_params.order, query_params.take, query_params.offset
     )
 }
