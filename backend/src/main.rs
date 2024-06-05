@@ -36,9 +36,11 @@ use item::{
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
     SearchQuery, SearchResult,
 };
-use order::{create_order,CartError, OrderDetails, OrderForm};
+use order::{create_order, CartError, OrderDetails, OrderForm};
 use user::{
-    create_user_address, get_user_by_id, get_user_orders, logout, signup, user_login, Address, AddressId, CreateUserForm, GeneralResponse, Session, SessionResponse, User, UserLogin, UserResponse, UserWithSession
+    create_user_address, get_user_by_id, get_user_orders, logout, signup, user_login, Address,
+    AddressId, CreateUserForm, GeneralResponse, Session, SessionResponse, User, UserLogin,
+    UserResponse, UserWithSession,MyOrderDetails,MyOrderQuery
 };
 
 #[derive(Deserialize, PartialEq, ToSchema)]
@@ -143,6 +145,8 @@ title = "Sellorama"),
             Order,
             OrderDetails,
             OrderForm,
+            MyOrderQuery,
+            MyOrderDetails,
             ErrorResponse,
             CartError,
             CartItem
