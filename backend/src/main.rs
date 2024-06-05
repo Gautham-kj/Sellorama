@@ -22,19 +22,27 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 mod cart;
+mod errors;
 mod item;
 mod objects;
+mod order;
 mod tests;
 mod user;
 
-use cart::{add_item, get_cart, update_cart_item, Cart, CartItem, CartResponse};
+use cart::{add_item, check_cart, get_cart, update_cart_item, Cart, CartItem, CartResponse};
+use errors::ErrorResponse;
 use item::{
     create_item, delete_item, edit_item, edit_stock, get_item, get_items, rate_item,
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
     SearchQuery, SearchResult,
 };
+use order::{
+    create_order, get_orders, set_dispatch_by_item_id, AllOrderDetails, CartError, DispatchForm,
+    OrderDetails, OrderForm, OrderQuery, Orders,
+};
 use user::{
-    get_user_by_id, logout, signup, user_login, CreateUserForm, GeneralResponse, Session,
+    create_user_address, get_user_by_id, get_user_orders, logout, signup, user_login, Address,
+    AddressId, CreateUserForm, GeneralResponse, MyOrderDetails, MyOrderQuery, Session,
     SessionResponse, User, UserLogin, UserResponse, UserWithSession,
 };
 
@@ -95,6 +103,11 @@ title = "Sellorama"),
         user::get_user_by_id,
         user::user_login,
         user::logout,
+        user::create_user_address,
+        user::get_user_orders,
+        order::create_order,
+        order::get_orders,
+        order::set_dispatch_by_item_id,
         item::create_item,
         item::edit_item,
         item::get_item,
@@ -105,13 +118,16 @@ title = "Sellorama"),
         item::search_suggestions,
         cart::get_cart,
         cart::add_item,
-        cart::update_cart_item
+        cart::update_cart_item,
+        cart::check_cart
     ),
     components(
         schemas(
             Ping,
             User,
             CreateUserForm,
+            AddressId,
+            Address,
             UserLogin,
             Session,
             UserWithSession,
@@ -130,7 +146,19 @@ title = "Sellorama"),
             Cart,
             CartItem,
             CartResponse,
-            Filters,Order
+            Filters,
+            Order,
+            Orders,
+            OrderQuery,
+            DispatchForm,
+            AllOrderDetails,
+            OrderDetails,
+            OrderForm,
+            MyOrderQuery,
+            MyOrderDetails,
+            ErrorResponse,
+            CartError,
+            CartItem
         )
     ),
     modifiers(&SecurityAddon)
@@ -225,6 +253,8 @@ pub fn app(appstate: AppState) -> Router {
         .route("/signup", post(signup))
         .route("/logout", post(logout))
         .route("/:username", get(get_user_by_id))
+        .route("/address", post(create_user_address))
+        .route("/myorders", get(get_user_orders))
         .with_state(appstate.clone());
 
     let item_router = Router::new()
@@ -243,6 +273,13 @@ pub fn app(appstate: AppState) -> Router {
         .route("/", get(get_cart))
         .route("/item", post(add_item))
         .route("/update", post(update_cart_item))
+        .route("/subcheckout", get(check_cart))
+        .with_state(appstate.clone());
+
+    let order_router = Router::new()
+        .route("/create", post(create_order))
+        .route("/orders", get(get_orders))
+        .route("/dispatch", post(set_dispatch_by_item_id))
         .with_state(appstate.clone());
 
     let app = Router::new()
@@ -250,6 +287,7 @@ pub fn app(appstate: AppState) -> Router {
         .nest("/cart", cart_router)
         .nest("/user", user_router)
         .nest("/item", item_router)
+        .nest("/order", order_router)
         .merge(SwaggerUi::new("/docs").url("/apidoc", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .merge(RapiDoc::new("/apidoc").path("/rapidoc"))

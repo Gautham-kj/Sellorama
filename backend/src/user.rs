@@ -1,3 +1,4 @@
+use crate::errors::MyError;
 use crate::AppState;
 use crate::Duration;
 use argon2::PasswordHash;
@@ -5,17 +6,20 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use axum::extract::Query;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Form, Json,
 };
+
 use chrono::{NaiveDateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{prelude::FromRow, types::chrono, Pool, Postgres};
+use utoipa::IntoParams;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -43,6 +47,20 @@ pub struct Session {
     pub session_id: Uuid,
 }
 
+#[derive(FromRow, ToSchema, Serialize)]
+pub struct MyOrderDetails {
+    order_id: Uuid,
+    order_date: NaiveDateTime,
+    item_id: Uuid,
+    dispatched: bool,
+}
+
+#[derive(Deserialize, Serialize, ToSchema, IntoParams)]
+pub struct MyOrderQuery {
+    page_no: Option<u32>,
+    take: Option<u32>,
+    dispatched: Option<bool>,
+}
 #[derive(Deserialize, Serialize, ToSchema, FromRow, Debug)]
 pub struct UserWithSession {
     pub session_id: Uuid,
@@ -73,6 +91,20 @@ pub struct UserResponse {
 #[derive(ToSchema, Serialize, Deserialize)]
 pub struct SessionResponse {
     pub detail: Session,
+}
+
+#[derive(FromRow, ToSchema, Serialize, Deserialize)]
+pub struct Address {
+    address_line_1: String,
+    address_line_2: Option<String>,
+    city: String,
+    country: String,
+    pincode: String,
+}
+
+#[derive(FromRow, ToSchema, Serialize)]
+pub struct AddressId {
+    address_id: Uuid,
 }
 
 #[utoipa::path(
@@ -314,6 +346,92 @@ pub async fn logout(state: State<AppState>, Form(form_data): Form<Session>) -> i
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/user/address",
+    security(
+        ("session_id"=[])
+    ),
+    responses(
+        (status =200 ,body = GeneralResponse),
+        (status =500 ,body = GeneralResponse),
+        (status =401 ,body = GeneralResponse),
+    )
+)]
+/// Create User Address
+///
+/// Endpoint to create a new address for the user
+pub async fn create_user_address(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<Address>,
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user) => {
+            let query = r#"
+                INSERT INTO "address" ("user_id","address_line_1", "address_line_2", "city", "country", "pincode")
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING "address_id";
+            "#;
+            match sqlx::query_as::<_, AddressId>(query)
+                .bind(user.user_id)
+                .bind(form_data.address_line_1)
+                .bind(form_data.address_line_2)
+                .bind(form_data.city)
+                .bind(form_data.country)
+                .bind(form_data.pincode)
+                .fetch_one(&state.db_pool)
+                .await
+                .map_err(|_| MyError::InternalServerError)?
+            {
+                response => Ok((StatusCode::OK, Json(json!(response)))),
+            }
+        }
+        None => Err(MyError::UnauthorizedError),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/user/myorders",
+    params(
+        MyOrderQuery
+    ),
+    security(
+        ("session_id" = [])
+    ),
+    responses(
+        (status = 200, body = Vec<MyOrderDetails>),
+        (status = 401, body = GeneralResponse),
+        (status = 500, body = GeneralResponse)
+    )
+)]
+/// Get User Orders
+///
+/// Endpoint to get all the orders placed by the user
+pub async fn get_user_orders(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Query(form_data): Query<MyOrderQuery>,
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user) => {
+            let query = paginate_orders(form_data);
+            match sqlx::query_as::<_, MyOrderDetails>(query.as_str())
+                .bind(user.user_id)
+                .fetch_all(&state.db_pool)
+                .await
+                .map_err(|_| MyError::InternalServerError)?
+            {
+                response => Ok((StatusCode::OK, Json(json!(response)))),
+            }
+        }
+        None => Err(MyError::UnauthorizedError),
+    }
+}
+
 fn create_hashed_password(password: String) -> String {
     let salt = SaltString::generate(&mut OsRng);
     let password_hash = Argon2::default()
@@ -414,12 +532,56 @@ pub async fn check_session_validity(
     }
 }
 
-pub async fn extract_session_header(headers: HeaderMap) -> Option<uuid::Uuid> {
+pub async fn extract_session_header(headers: HeaderMap) -> Result<uuid::Uuid, MyError> {
     let session;
     match headers.get("session_id") {
         Some(session_id) => session = session_id,
-        None => return None,
+        None => return Err(MyError::UnauthorizedError),
     }
     let session_id = uuid::Uuid::parse_str(session.to_str().unwrap()).unwrap();
-    return Some(session_id);
+    Ok(session_id)
+}
+
+fn paginate_orders(pagination: MyOrderQuery) -> String {
+    struct PaginationParams {
+        take: u32,
+        offset: u32,
+        dispatched: String,
+    }
+    // Default values
+    let mut query_params = PaginationParams {
+        take: 10,
+        offset: 0,
+        dispatched: "".to_string(),
+    };
+    // Set values from pagination
+    match pagination.take {
+        Some(take) => query_params.take = take,
+        None => query_params.take = 10,
+    }
+    match pagination.page_no {
+        Some(page_no) => {
+            query_params.offset = if page_no > 0 {
+                (page_no - 1) * query_params.take
+            } else {
+                0
+            }
+        }
+        None => query_params.offset = 0,
+    }
+    match pagination.dispatched {
+        Some(dispatched) => {
+            query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#, dispatched)
+        }
+        None => query_params.dispatched = "".to_string(),
+    }
+    format!(
+        r#"SELECT t1."order_id",t1."item_id",t1."quantity",t2."order_date",t2."address_id",t1."dispatched" FROM 
+        (SELECT * from "order_items" ) as t1 
+        INNER JOIN
+        (SELECT * FROM "order" WHERE "user_id" = $1 ) as t2
+        ON t1."order_id" = t2."order_id"
+        {} ORDER BY t2."order_date" DESC LIMIT {} OFFSET {};"#,
+        query_params.dispatched, query_params.take, query_params.offset
+    )
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    errors::MyError,
     objects::{get_presigned_url, put_object},
     user::{check_session_validity, extract_session_header, GeneralResponse},
     AppState, Filters, Order,
@@ -102,8 +103,8 @@ pub struct SearchResult {
     path="/item/create",
     responses (
         (status = 201, body = GeneralResponse),
-        (status = 401, body = GeneralResponse),
-        (status = 100, body = GeneralResponse)
+        (status = 401, body = ErrorResponse),
+        (status = 500, body = ErrorResponse)
     ),
     request_body(content_type = "multipart/form-data", content = ItemForm),
     security(
@@ -118,19 +119,8 @@ pub async fn create_item(
     state: State<AppState>,
     // Form(form_data): Form<ItemForm>,
     mut multipart: Multipart,
-) -> impl IntoResponse {
-    let session_id;
-    match extract_session_header(headers).await {
-        Some(session) => session_id = session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
-                })),
-            )
-        }
-    }
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
     //multipart form handling
 
     match check_session_validity(&state.db_pool, session_id).await {
@@ -152,12 +142,7 @@ pub async fn create_item(
                 match field.bytes().await {
                     Ok(bytes) => data = bytes.to_vec(),
                     Err(_e) => {
-                        return (
-                            StatusCode::UNPROCESSABLE_ENTITY,
-                            Json(json!(GeneralResponse {
-                                detail: "File too large".to_string()
-                            })),
-                        );
+                        return Err(MyError::UnproccessableEntityError);
                     }
                 }
 
@@ -192,7 +177,7 @@ pub async fn create_item(
             .bind(&form_data.price)
             .fetch_optional(&mut *txn)
             .await
-            .unwrap()
+            .map_err(|_| MyError::InternalServerError)?
             {
                 Some(item_response) => match form_data.item_media {
                     Some(media) => {
@@ -209,7 +194,7 @@ pub async fn create_item(
                             .bind(vec![item_response.item_id; media_ids.len()])
                             .fetch_optional(&mut *txn)
                             .await
-                            .unwrap()
+                            .map_err(|_| MyError::InternalServerError)?
                         {
                             Some(_response) => {
                                 for (index, media_item) in media.iter().enumerate() {
@@ -225,63 +210,41 @@ pub async fn create_item(
                                     )
                                     .await
                                     {
-                                        Err(_e) => {
-                                            return (
-                                                StatusCode::UNPROCESSABLE_ENTITY,
-                                                Json(json!(GeneralResponse {
-                                                    detail: "Error Creating Item".to_string()
-                                                })),
-                                            );
-                                        }
+                                        Err(_e) => return Err(MyError::UnproccessableEntityError),
                                         _ => (),
                                     }
                                 }
                                 txn.commit().await.unwrap();
-                                (
+                                Ok((
                                     StatusCode::CREATED,
                                     Json(json!(GeneralResponse {
                                         detail: "Item Created".to_string()
                                     })),
-                                )
+                                ))
                             }
                             None => {
                                 txn.rollback().await.unwrap();
-                                return (
-                                    StatusCode::BAD_REQUEST,
-                                    Json(json!(GeneralResponse {
-                                        detail: "Error Creating Item".to_string()
-                                    })),
-                                );
+                                return Err(MyError::BadRequest);
                             }
                         }
                     }
                     None => {
                         txn.commit().await.unwrap();
-                        return (
+                        return Ok((
                             StatusCode::CREATED,
                             Json(json!(GeneralResponse {
                                 detail: "Item Created".to_string()
                             })),
-                        );
+                        ));
                     }
                 },
                 None => {
                     txn.rollback().await.unwrap();
-                    return (
-                        StatusCode::NOT_FOUND,
-                        Json(json!(GeneralResponse {
-                            detail: "Could not make Item".to_string()
-                        })),
-                    );
+                    return Err(MyError::BadRequest);
                 }
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!(GeneralResponse {
-                detail: "session expired or does not exist".to_string()
-            })),
-        ),
+        None => Err(MyError::UnauthorizedError),
     }
 }
 
@@ -293,8 +256,8 @@ pub async fn create_item(
     ),
     responses(
         (status = 200 , body = GeneralResponse),
-        (status = 401 , body = GeneralResponse),
-        (status = 500 , body = GeneralResponse),
+        (status = 401 , body = ErrorResponse),
+        (status = 500 , body = ErrorResponse),
     )
 )]
 /// Delete Item
@@ -304,19 +267,8 @@ pub async fn delete_item(
     headers: HeaderMap,
     state: State<AppState>,
     Path(item_id): Path<Uuid>,
-) -> impl IntoResponse {
-    let session_id;
-    match extract_session_header(headers).await {
-        Some(session) => session_id = session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
-                })),
-            )
-        }
-    }
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
             match sqlx::query_as::<_,ItemId>(r#"DELETE FROM "item" WHERE "item_id" = $1 AND "user_id" = $2 RETURNING "item_id" "#)
@@ -324,34 +276,19 @@ pub async fn delete_item(
                     .bind(response.user_id)
                     .fetch_optional(&state.db_pool)
                     .await
+            .map_err(|_|MyError::InternalServerError)?
+
                 {
-                    Ok(response) => { match response {
-                        Some(_item) => (
+                        Some(_item) => Ok((
                             StatusCode::OK,
                             Json(json!(GeneralResponse {
                                 detail: "Item Deleted".to_string()
                             })),
-                        ),
-                        None => (
-                            StatusCode::UNAUTHORIZED,
-                            Json(json!(GeneralResponse {
-                                detail: "Invalid credentials".to_string()
-                            }))),
-                    }},
-                    Err(_e) => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!(GeneralResponse {
-                            detail: "Error deleting item".to_string()
-                        })),
-                    ),
-                }
+                        )),
+                        None => Err(MyError::UnauthorizedError)
+                    }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!(GeneralResponse {
-                detail: "Inavlid credentials".to_string()
-            })),
-        ),
+        None => Err(MyError::UnauthorizedError),
     }
 }
 
@@ -363,8 +300,8 @@ pub async fn delete_item(
     ),
     responses(
         (status = 200 , body = GeneralResponse),
-        (status = 401 , body = GeneralResponse),
-        (status = 500 , body = GeneralResponse),
+        (status = 401 , body = ErrorResponse),
+        (status = 500 , body = ErrorResponse),
     )
 )]
 /// Edit Item
@@ -375,19 +312,8 @@ pub async fn edit_item(
     state: State<AppState>,
     Path(item_id): Path<Uuid>,
     Form(form_data): Form<ItemForm>,
-) -> impl IntoResponse {
-    let session_id;
-    match extract_session_header(headers).await {
-        Some(session) => session_id = session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
-                })),
-            )
-        }
-    }
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
             println!("{:?}", response);
@@ -405,35 +331,18 @@ pub async fn edit_item(
                 .bind(response.user_id)
                 .fetch_optional(&state.db_pool)
                 .await
+                .map_err(|_| MyError::InternalServerError)?
             {
-                Ok(response) => match response {
-                    Some(_item) => (
-                        StatusCode::OK,
-                        Json(json!(GeneralResponse {
-                            detail: "Item Updated".to_string()
-                        })),
-                    ),
-                    None => (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!(GeneralResponse {
-                            detail: "Invalid credentials".to_string()
-                        })),
-                    ),
-                },
-                Err(_e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                Some(_item) => Ok((
+                    StatusCode::OK,
                     Json(json!(GeneralResponse {
-                        detail: "Error deleting item".to_string()
+                        detail: "Item Updated".to_string()
                     })),
-                ),
+                )),
+                None => Err(MyError::UnauthorizedError),
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!(GeneralResponse {
-                detail: "Inavlid credentials".to_string()
-            })),
-        ),
+        None => Err(MyError::UnauthorizedError),
     }
 }
 
@@ -456,19 +365,8 @@ pub async fn get_item(
     headers: HeaderMap,
     state: State<AppState>,
     Path(item_id): Path<Uuid>,
-) -> impl IntoResponse {
-    let session_id;
-    match extract_session_header(headers).await {
-        Some(session) => session_id = session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
-                })),
-            )
-        }
-    }
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(uresponse) => {
             let query = r#"SELECT t1.item_id, t1.user_id,t1.title,t1.content,t1.price,t1.rating,t2.stock 
@@ -482,8 +380,9 @@ pub async fn get_item(
                 .bind(item_id)
                 .fetch_one(&state.db_pool)
                 .await
+                .map_err(|_| MyError::InternalServerError)?
             {
-                Ok(response) => {
+                response => {
                     let media_urls = get_presigned_urls_for_items(
                         vec![response.item_id],
                         &state.db_pool,
@@ -491,9 +390,9 @@ pub async fn get_item(
                         &state.image_bucket,
                     )
                     .await
-                    .unwrap();
+                    .map_err(|_| MyError::InternalServerError)?;
                     match media_urls.len() {
-                        0 => (
+                        0 => Ok((
                             StatusCode::OK,
                             Json(json!(ItemResponse {
                                 detail: Item {
@@ -512,8 +411,8 @@ pub async fn get_item(
                                     false
                                 }
                             })),
-                        ),
-                        _ => (
+                        )),
+                        _ => Ok((
                             StatusCode::OK,
                             Json(json!(ItemResponse {
                                 detail: Item {
@@ -532,23 +431,12 @@ pub async fn get_item(
                                     false
                                 }
                             })),
-                        ),
+                        )),
                     }
                 }
-                Err(e) => (
-                    StatusCode::NOT_FOUND,
-                    Json(json!(GeneralResponse {
-                        detail: e.to_string()
-                    })),
-                ),
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!(GeneralResponse {
-                detail: "Inavlid credentials".to_string()
-            })),
-        ),
+        None => Err(MyError::UnauthorizedError),
     }
 }
 
@@ -563,19 +451,20 @@ pub async fn get_item(
     ),
     responses (
         (status = 200, body = GeneralResponse),
-        (status = 500, body = GeneralResponse)
+        (status = 500, body = ErrorResponse)
     )
 )]
 pub async fn get_items(
     state: State<AppState>,
     Query(pagination): Query<ItemsQuery>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, MyError> {
     let query = paginate_items(pagination);
     match sqlx::query_as::<_, Item>(query.as_str())
         .fetch_all(&state.db_pool)
         .await
+        .map_err(|_| MyError::InternalServerError)?
     {
-        Ok(result) => {
+        result => {
             let mut response: Vec<ItemResponse> = vec![];
             let items: Vec<Uuid> = result
                 .iter()
@@ -588,7 +477,7 @@ pub async fn get_items(
                 &state.image_bucket,
             )
             .await
-            .unwrap();
+            .map_err(|_| MyError::InternalServerError)?;
 
             for item in result {
                 let media_item = media_urls[&item.item_id].clone();
@@ -605,17 +494,11 @@ pub async fn get_items(
                     }),
                 }
             }
-            (
+            Ok((
                 StatusCode::OK,
                 Json(json!(PageResponse { items: response })),
-            )
+            ))
         }
-        Err(e) => (
-            StatusCode::NOT_FOUND,
-            Json(json!(GeneralResponse {
-                detail: e.to_string()
-            })),
-        ),
     }
 }
 
@@ -638,19 +521,8 @@ pub async fn rate_item(
     headers: HeaderMap,
     state: State<AppState>,
     Form(form_data): Form<RateForm>,
-) -> impl IntoResponse {
-    let session_id;
-    match extract_session_header(headers).await {
-        Some(session) => session_id = session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
-                })),
-            )
-        }
-    }
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(user_response) => {
             let query = r#"INSERT INTO 
@@ -664,35 +536,21 @@ pub async fn rate_item(
                 .bind(form_data.content)
                 .fetch_optional(&state.db_pool)
                 .await
+                .map_err(|_| MyError::InternalServerError)?
             {
-                Ok(result) => match result {
-                    Some(_t) => (
-                        StatusCode::CREATED,
-                        Json(json!(GeneralResponse {
-                            detail: "Comment Created".to_string()
-                        })),
-                    ),
-                    None => (
-                        StatusCode::CONFLICT,
-                        Json(json!(GeneralResponse {
-                            detail: "Cannot rate one's own item".to_string()
-                        })),
-                    ),
-                },
-                Err(_e) => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
+                Some(_t) => Ok((
+                    StatusCode::CREATED,
                     Json(json!(GeneralResponse {
-                        detail: "Error creating comment".to_string() //
+                        detail: "Comment Created".to_string()
                     })),
-                ),
+                )),
+                None => Err(MyError::CustomError((
+                    409,
+                    "Cannot rate one's own item".to_string(),
+                ))),
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!(GeneralResponse {
-                detail: "Invalid Credentials".to_string()
-            })),
-        ),
+        None => Err(MyError::UnauthorizedError),
     }
 }
 
@@ -714,19 +572,8 @@ pub async fn edit_stock(
     headers: HeaderMap,
     state: State<AppState>,
     Form(form_data): Form<ItemStock>,
-) -> impl IntoResponse {
-    let session_id;
-    match extract_session_header(headers).await {
-        Some(session) => session_id = session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!(GeneralResponse {
-                    detail: "Invalid Credentials".to_string()
-                })),
-            )
-        }
-    }
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(user_response) => {
             let query = r#"INSERT INTO "stock" ("item_id","quantity") 
@@ -739,35 +586,18 @@ pub async fn edit_stock(
                 .bind(user_response.user_id)
                 .fetch_optional(&state.db_pool)
                 .await
+                .map_err(|_| MyError::InternalServerError)?
             {
-                Ok(response) => match response {
-                    Some(_t) => (
-                        StatusCode::CREATED,
-                        Json(json!(GeneralResponse {
-                            detail: "Stock updated".to_string(),
-                        })),
-                    ),
-                    None => (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!(GeneralResponse {
-                            detail: "Invalid Credentials".to_string(),
-                        })),
-                    ),
-                },
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                Some(_t) => Ok((
+                    StatusCode::CREATED,
                     Json(json!(GeneralResponse {
-                        detail: e.to_string(),
+                        detail: "Stock updated".to_string(),
                     })),
-                ),
+                )),
+                None => Err(MyError::UnauthorizedError),
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!(GeneralResponse {
-                detail: "Invalid Credentials".to_string()
-            })),
-        ),
+        None => Err(MyError::UnauthorizedError),
     }
 }
 
@@ -778,14 +608,15 @@ pub async fn edit_stock(
         SearchQuery
     ),
     responses(
-        (status = 200, body = Vec<Item>)
+        (status = 200, body = Vec<Item>),
+        (status = 500, body = ErrorResponse)
     )
 )]
 ///Get Search Autocompletions
 pub async fn search_suggestions(
     state: State<AppState>,
     search_query: Query<SearchQuery>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, MyError> {
     let query = r#"
     SELECT * FROM "item" WHERE to_tsvector("title"|| ' ' ||"content") @@ to_tsquery($1);
     "#;
@@ -793,17 +624,12 @@ pub async fn search_suggestions(
         .bind(&search_query.query)
         .fetch_all(&state.db_pool)
         .await
+        .map_err(|_| MyError::InternalServerError)?
     {
-        Ok(response) => (
+        response => Ok((
             StatusCode::OK,
             Json(json!(SearchResult { keywords: response })),
-        ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!(GeneralResponse {
-                detail: e.to_string()
-            })),
-        ),
+        )),
     }
 }
 
@@ -948,8 +774,7 @@ async fn get_presigned_urls_for_items(
                         format!("{}.jpg", media_id).as_str(),
                         3600,
                     )
-                    .await
-                    .unwrap();
+                    .await?;
                     vector.push(url);
                 }
                 None => {
@@ -959,8 +784,7 @@ async fn get_presigned_urls_for_items(
                         format!("{}.jpg", media_id).as_str(),
                         3600,
                     )
-                    .await
-                    .unwrap();
+                    .await?;
                     item_with_media.insert(media_item.item_id, vec![url]);
                 }
             },

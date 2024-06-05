@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-
     use crate::{dotenv, objects, AppState, PgPoolOptions};
 
     use axum::Router;
@@ -203,5 +202,22 @@ mod tests {
             .map_err(|_| assert!(false))
             .unwrap();
         assert_eq!(res.status(), reqwest::StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn test_7_get_items() {
+        let url = start_app_instance().await;
+        let session_id = get_session_id(url.clone()).await;
+        //headers
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("session_id", session_id.to_string().parse().unwrap());
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+        let client = reqwest::Client::new();
+        let endpoint_url = format!("http://{}/item", url);
+        let res = client.get(endpoint_url).send().await.unwrap();
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
     }
 }
