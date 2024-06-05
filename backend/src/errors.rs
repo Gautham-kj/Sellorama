@@ -6,6 +6,9 @@ use axum::{
 use serde::Serialize;
 use serde_json::json;
 use utoipa::{ToResponse, ToSchema};
+
+#[allow(unused)]
+#[derive(ToSchema)]
 pub enum MyError {
     NotFound,
     InternalServerError,

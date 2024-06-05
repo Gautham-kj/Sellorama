@@ -37,8 +37,8 @@ use item::{
     SearchQuery, SearchResult,
 };
 use order::{
-    create_order, get_orders,set_dispatch_by_item_id, DispatchForm,AllOrderDetails, CartError, OrderDetails, OrderForm, OrderQuery,
-    Orders,
+    create_order, get_orders, set_dispatch_by_item_id, AllOrderDetails, CartError, DispatchForm,
+    OrderDetails, OrderForm, OrderQuery, Orders,
 };
 use user::{
     create_user_address, get_user_by_id, get_user_orders, logout, signup, user_login, Address,
@@ -279,7 +279,7 @@ pub fn app(appstate: AppState) -> Router {
     let order_router = Router::new()
         .route("/create", post(create_order))
         .route("/orders", get(get_orders))
-        .route("/dispatch",post(set_dispatch_by_item_id))
+        .route("/dispatch", post(set_dispatch_by_item_id))
         .with_state(appstate.clone());
 
     let app = Router::new()

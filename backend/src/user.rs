@@ -570,7 +570,9 @@ fn paginate_orders(pagination: MyOrderQuery) -> String {
         None => query_params.offset = 0,
     }
     match pagination.dispatched {
-        Some(dispatched) => query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#,dispatched),
+        Some(dispatched) => {
+            query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#, dispatched)
+        }
         None => query_params.dispatched = "".to_string(),
     }
     format!(

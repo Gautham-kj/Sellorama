@@ -1,8 +1,8 @@
 use crate::errors::MyError;
-use crate::CartItem;
 use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
 use crate::AppState;
-use axum::extract::{Path, Query};
+use crate::CartItem;
+use axum::extract::Query;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -239,21 +239,18 @@ pub async fn set_dispatch_by_item_id(
     let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(user) => {
-            let query = 
-            r#"UPDATE "order_items" 
+            let query = r#"UPDATE "order_items" 
         SET "dispatched" = TRUE
         WHERE
         "item_id" = $2 AND "order_id" = $3 AND "dispatched" = FALSE AND item_ownership("item_id",$1)
         RETURNING "dispatched";"#;
-            match sqlx::query_as::<_,DispatchStatus>(
-                query
-            )
-            .bind(user.user_id)
-            .bind(form_data.item_id)
-            .bind(form_data.order_id)
-            .fetch_optional(&state.db_pool)
-            .await
-            .map_err(|_| MyError::InternalServerError)?
+            match sqlx::query_as::<_, DispatchStatus>(query)
+                .bind(user.user_id)
+                .bind(form_data.item_id)
+                .bind(form_data.order_id)
+                .fetch_optional(&state.db_pool)
+                .await
+                .map_err(|_| MyError::InternalServerError)?
             {
                 Some(status) => {
                     if status.dispatched {
@@ -301,7 +298,9 @@ fn paginate_orders(pagination: OrderQuery) -> String {
         None => query_params.offset = 0,
     }
     match pagination.dispatched {
-        Some(dispatched) => query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#,dispatched),
+        Some(dispatched) => {
+            query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#, dispatched)
+        }
         None => query_params.dispatched = "".to_string(),
     }
     match pagination.order {
