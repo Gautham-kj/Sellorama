@@ -546,13 +546,13 @@ fn paginate_orders(pagination: MyOrderQuery) -> String {
     struct PaginationParams {
         take: u32,
         offset: u32,
-        dispatched: bool,
+        dispatched: String,
     }
     // Default values
     let mut query_params = PaginationParams {
         take: 10,
         offset: 0,
-        dispatched: false,
+        dispatched: "".to_string(),
     };
     // Set values from pagination
     match pagination.take {
@@ -570,16 +570,16 @@ fn paginate_orders(pagination: MyOrderQuery) -> String {
         None => query_params.offset = 0,
     }
     match pagination.dispatched {
-        Some(dispatched) => query_params.dispatched = dispatched,
-        None => query_params.dispatched = false,
+        Some(dispatched) => query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#,dispatched),
+        None => query_params.dispatched = "".to_string(),
     }
     format!(
-        r#"SELECT t1."order_id",t1."item_id",t1."quantity",t2."order_date",t2."address_id",t2."dispatched" FROM 
+        r#"SELECT t1."order_id",t1."item_id",t1."quantity",t2."order_date",t2."address_id",t1."dispatched" FROM 
         (SELECT * from "order_items" ) as t1 
         INNER JOIN
         (SELECT * FROM "order" WHERE "user_id" = $1 ) as t2
         ON t1."order_id" = t2."order_id"
-        WHERE "dispatched" = {} ORDER BY t2."order_date" DESC LIMIT {} OFFSET {};"#,
+        {} ORDER BY t2."order_date" DESC LIMIT {} OFFSET {};"#,
         query_params.dispatched, query_params.take, query_params.offset
     )
 }
