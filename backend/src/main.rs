@@ -36,7 +36,7 @@ use item::{
     search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
     SearchQuery, SearchResult,
 };
-use order::{create_order, CartError, OrderDetails, OrderForm};
+use order::{create_order,get_orders,AllOrderDetails,OrderQuery,Orders, CartError, OrderDetails, OrderForm};
 use user::{
     create_user_address, get_user_by_id, get_user_orders, logout, signup, user_login, Address,
     AddressId, CreateUserForm, GeneralResponse, Session, SessionResponse, User, UserLogin,
@@ -103,6 +103,7 @@ title = "Sellorama"),
         user::create_user_address,
         user::get_user_orders,
         order::create_order,
+        order::get_orders,
         item::create_item,
         item::edit_item,
         item::get_item,
@@ -143,6 +144,9 @@ title = "Sellorama"),
             CartResponse,
             Filters,
             Order,
+            Orders,
+            OrderQuery,
+            AllOrderDetails,
             OrderDetails,
             OrderForm,
             MyOrderQuery,
@@ -269,6 +273,7 @@ pub fn app(appstate: AppState) -> Router {
 
     let order_router = Router::new()
         .route("/create", post(create_order))
+        .route("/orders", get(get_orders))
         .with_state(appstate.clone());
 
     let app = Router::new()
