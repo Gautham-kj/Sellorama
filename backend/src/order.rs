@@ -1,8 +1,8 @@
-use crate::cart::CartItem;
 use crate::errors::MyError;
+use crate::CartItem;
 use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
 use crate::AppState;
-use axum::extract::Query;
+use axum::extract::{Path, Query};
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -42,6 +42,16 @@ pub struct OrderQuery {
     order: Option<bool>,
 }
 
+#[derive(FromRow)]
+pub struct DispatchStatus {
+    dispatched: bool,
+}
+
+#[derive(FromRow, ToSchema, Deserialize, Serialize)]
+pub struct DispatchForm {
+    order_id: Uuid,
+    item_id: Uuid,
+}
 #[derive(FromRow, ToSchema, Serialize)]
 pub struct Orders {
     detail: Vec<AllOrderDetails>,
@@ -209,18 +219,70 @@ pub async fn get_orders(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/order/dispatch",
+    security(
+        ("session_id" = [])
+    ),
+    responses(
+        (status = 200, body = GeneralResponse),
+        (status = 401, body = ErrorResponse),
+        (status = 500, body = ErrorResponse)
+    ),
+)]
+pub async fn set_dispatch_by_item_id(
+    headers: HeaderMap,
+    state: State<AppState>,
+    Form(form_data): Form<DispatchForm>,
+) -> Result<impl IntoResponse, MyError> {
+    let session_id = extract_session_header(headers).await?;
+    match check_session_validity(&state.db_pool, session_id).await {
+        Some(user) => {
+            let query = 
+            r#"UPDATE "order_items" 
+        SET "dispatched" = TRUE
+        WHERE
+        "item_id" = $2 AND "order_id" = $3 AND "dispatched" = FALSE AND item_ownership("item_id",$1)
+        RETURNING "dispatched";"#;
+            match sqlx::query_as::<_,DispatchStatus>(
+                query
+            )
+            .bind(user.user_id)
+            .bind(form_data.item_id)
+            .bind(form_data.order_id)
+            .fetch_optional(&state.db_pool)
+            .await
+            .map_err(|_| MyError::InternalServerError)?
+            {
+                Some(status) => {
+                    if status.dispatched {
+                        Ok(Json(GeneralResponse {
+                            detail: "Order item dispatched successfully".to_string(),
+                        }))
+                    } else {
+                        Err(MyError::UnauthorizedError)
+                    }
+                }
+                None => Err(MyError::UnauthorizedError),
+            }
+        }
+        None => Err(MyError::UnauthorizedError),
+    }
+}
+
 fn paginate_orders(pagination: OrderQuery) -> String {
     struct PaginationParams {
         take: u32,
         offset: u32,
-        dispatched: bool,
+        dispatched: String,
         order: String,
     }
     // Default values
     let mut query_params = PaginationParams {
         take: 10,
         offset: 0,
-        dispatched: false,
+        dispatched: "".to_string(),
         order: "DESC".to_string(),
     };
     // Set values from pagination
@@ -239,8 +301,8 @@ fn paginate_orders(pagination: OrderQuery) -> String {
         None => query_params.offset = 0,
     }
     match pagination.dispatched {
-        Some(dispatched) => query_params.dispatched = dispatched,
-        None => query_params.dispatched = false,
+        Some(dispatched) => query_params.dispatched = format!(r#"WHERE "dispatched" = {}"#,dispatched),
+        None => query_params.dispatched = "".to_string(),
     }
     match pagination.order {
         Some(order) => match order {
@@ -250,12 +312,12 @@ fn paginate_orders(pagination: OrderQuery) -> String {
         None => query_params.order = "DESC".to_string(),
     }
     format!(
-        r#"SELECT t1."order_id",t1."item_id",t1."quantity",t2."order_date",t2."address_id",t2."dispatched" FROM 
+        r#"SELECT t1."order_id",t1."item_id",t1."quantity",t2."order_date",t2."address_id",t1."dispatched" FROM 
         (SELECT * from "order_items" WHERE item_ownership("item_id",$1) IS TRUE ) as t1 
         INNER JOIN
         (SELECT * FROM "order" ) as t2
         ON t1."order_id" = t2."order_id"
-        WHERE "dispatched" = {} ORDER BY t2."order_date" {} LIMIT {} OFFSET {};"#,
+        {} ORDER BY t2."order_date" {} LIMIT {} OFFSET {};"#,
         query_params.dispatched, query_params.order, query_params.take, query_params.offset
     )
 }

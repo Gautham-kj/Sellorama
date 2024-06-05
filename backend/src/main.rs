@@ -37,7 +37,7 @@ use item::{
     SearchQuery, SearchResult,
 };
 use order::{
-    create_order, get_orders, AllOrderDetails, CartError, OrderDetails, OrderForm, OrderQuery,
+    create_order, get_orders,set_dispatch_by_item_id, DispatchForm,AllOrderDetails, CartError, OrderDetails, OrderForm, OrderQuery,
     Orders,
 };
 use user::{
@@ -107,6 +107,7 @@ title = "Sellorama"),
         user::get_user_orders,
         order::create_order,
         order::get_orders,
+        order::set_dispatch_by_item_id,
         item::create_item,
         item::edit_item,
         item::get_item,
@@ -149,6 +150,7 @@ title = "Sellorama"),
             Order,
             Orders,
             OrderQuery,
+            DispatchForm,
             AllOrderDetails,
             OrderDetails,
             OrderForm,
@@ -277,6 +279,7 @@ pub fn app(appstate: AppState) -> Router {
     let order_router = Router::new()
         .route("/create", post(create_order))
         .route("/orders", get(get_orders))
+        .route("/dispatch",post(set_dispatch_by_item_id))
         .with_state(appstate.clone());
 
     let app = Router::new()
