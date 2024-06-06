@@ -1,4 +1,4 @@
 #!/bin/bash
 
 sqlx migrate run
-cargo run
+cargo run --bin backend
