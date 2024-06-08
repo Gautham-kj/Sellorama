@@ -52,6 +52,7 @@ jobs:
               with:
                   context: ./backend
                   push: true
+                  platforms: ${{ matrix.platform }}
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}
             - name: Generate artifact attestation
