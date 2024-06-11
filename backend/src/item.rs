@@ -25,9 +25,11 @@ pub struct ItemsQuery {
     take: Option<u32>,
     /// Page number to fetch
     page_no: Option<u32>,
+    #[schema(value_type = String,example = "Price(Inc)")]
     /// The Filter should be of either Price(Order), Rating(Order), DateOfCreation(Order), Alphabetic(Order)
     ///
     /// The Order should be either Inc or Dec
+    
     filter: Option<Filters>,
     /// Search String to filter items
     search_string: Option<String>,
@@ -37,6 +39,7 @@ pub struct ItemsQuery {
 pub struct ItemForm {
     title: String,
     content: String,
+    #[schema(value_type = String, format = Float, example = "10.00")]
     price: rust_decimal::Decimal,
     item_media: Option<Vec<Vec<u8>>>,
 }
