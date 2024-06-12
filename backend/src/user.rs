@@ -34,6 +34,7 @@ pub struct User {
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct UserLogin {
     username: String,
+    #[schema(value_type = String, format = Password)]
     password: String,
 }
 
