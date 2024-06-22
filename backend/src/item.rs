@@ -25,10 +25,11 @@ pub struct ItemsQuery {
     take: Option<u32>,
     /// Page number to fetch
     page_no: Option<u32>,
-    /// The Filter should be of either Price(Order), Rating(Order), DateOfCreation(Order), Alphabetic(Order)
+    /// The Filter should be of either Price(Order), Rating(Order), DateOfCreation(Order), Alphabetical(Order)
     ///
     /// The Order should be either Inc or Dec
-    filter: Option<Filters>,
+    #[schema(value_type=String,example = "Rating(Inc)")]
+    filter: Option<String>,
     /// Search String to filter items
     search_string: Option<String>,
 }
@@ -37,6 +38,7 @@ pub struct ItemsQuery {
 pub struct ItemForm {
     title: String,
     content: String,
+    #[schema(value_type = String, format = Float, example = "10.00")]
     price: rust_decimal::Decimal,
     item_media: Option<Vec<Vec<u8>>>,
 }
@@ -450,7 +452,7 @@ pub async fn get_item(
         ItemsQuery
     ),
     responses (
-        (status = 200, body = GeneralResponse),
+        (status = 200, body = PageResponse),
         (status = 500, body = ErrorResponse)
     )
 )]
@@ -459,7 +461,7 @@ pub async fn get_items(
     Query(pagination): Query<ItemsQuery>,
 ) -> Result<impl IntoResponse, MyError> {
     let query = paginate_items(pagination);
-    match sqlx::query_as::<_, Item>(query.as_str())
+    match sqlx::query_as::<_, Item>(query?.as_str())
         .fetch_all(&state.db_pool)
         .await
         .map_err(|_| MyError::InternalServerError)?
@@ -633,7 +635,7 @@ pub async fn search_suggestions(
     }
 }
 
-fn paginate_items(pagination: ItemsQuery) -> String {
+fn paginate_items(pagination: ItemsQuery) -> Result<String,MyError> {
     struct PaginationParams {
         take: u32,
         offset: u32,
@@ -670,68 +672,79 @@ fn paginate_items(pagination: ItemsQuery) -> String {
         }
         None => search_token = r#""#.to_owned(),
     }
+    let mut order_query="";
     match pagination.filter {
-        Some(filter_type) => match filter_type {
+        Some(filter_type) => {
+            let filter_type: Filters = serde_json::from_value::<Filters>(serde_json::Value::String(filter_type)).map_err(|_|MyError::UnproccessableEntityError)?;
+            match filter_type {
             Filters::Alphabetical(order) => match order {
                 Order::Inc => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "title" ASC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token, pagination_query
+                    );
+                    order_query =  r#"ORDER BY "title" ASC "#;
                 }
                 Order::Dec => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "title" DESC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token, pagination_query
+                    );
+                    order_query =  r#"ORDER BY "title" DESC "#;
                 }
             },
             Filters::DateOfCreation(order) => match order {
                 Order::Inc => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "date_created" ASC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token, pagination_query
+                    );
+                    order_query = r#"ORDER BY "date_created" ASC "#;
                 }
                 Order::Dec => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "date_created" DESC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token, pagination_query
+                    );
+                    order_query = r#"ORDER BY "date_created" DESC "#;
                 }
             },
             Filters::Rating(order) => match order {
                 Order::Inc => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "rating" ASC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token ,pagination_query
+                    );
+                    order_query = r#"ORDER BY "rating" ASC "#;
                 }
                 Order::Dec => {
                     query = format!(
-                        "{} {} {} {}",
+                        "{} {}  {}",
                         query,
                         search_token,
-                        r#"ORDER BY "rating" DESC NULLS LAST"#,
+                        
                         pagination_query
-                    )
+                    );
+                    order_query = r#"ORDER BY "rating" DESC NULLS LAST"#;
                 }
             },
             Filters::Price(order) => match order {
                 Order::Inc => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "price" ASC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token, pagination_query
+                    );
+                    order_query = r#"ORDER BY "price" ASC "#;
                 }
                 Order::Dec => {
                     query = format!(
-                        "{} {} {} {}",
-                        query, search_token, r#"ORDER BY "price" DESC "#, pagination_query
-                    )
+                        "{} {} {}",
+                        query, search_token, pagination_query
+                    );
+                    order_query = r#"ORDER BY "price" DESC "#;
                 }
             },
-        },
+        }},
         None => query = format!("{} {} {} ", query, search_token, pagination_query),
     }
     query = format!(
@@ -740,10 +753,10 @@ fn paginate_items(pagination: ItemsQuery) -> String {
          FROM ({}) AS t1 
          LEFT JOIN 
          ( SELECT "item_id","quantity" as stock from "stock") AS t2 
-         ON t1."item_id" = t2."item_id" "#,
-        query
+         ON t1."item_id" = t2."item_id" {}"#,
+        query,order_query
     );
-    return query;
+    Ok(query)
 }
 
 async fn get_presigned_urls_for_items(
