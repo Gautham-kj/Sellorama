@@ -675,7 +675,6 @@ fn paginate_items(pagination: ItemsQuery) -> Result<String,MyError> {
     let mut order_query="";
     match pagination.filter {
         Some(filter_type) => {
-            println!("{}",filter_type);
             let filter_type: Filters = serde_json::from_value::<Filters>(serde_json::Value::String(filter_type)).map_err(|_|MyError::UnproccessableEntityError)?;
             match filter_type {
             Filters::Alphabetical(order) => match order {
