@@ -1,6 +1,6 @@
 # Sellorama
 
-Welcome to Sellorama, an innovative e-commerce platform designed to streamline the process of buying and selling merchandise. Our backend infrastructure is expertly developed in Rust, utilizing PostgreSQL for advanced database management. The Axum Web Framework enhances our backend API, while SQLx ensures seamless database connectivity. For object storage, AWS S3 SDK is employed, with CloudFlare R2 providing object storage solutions in production environments. Sellorama is dedicated to offering a smooth and efficient user experience. Discover our API and access detailed documentation at https://sellorama-api.gauthamkj.site.
+Welcome to Sellorama, an innovative e-commerce platform designed to streamline the process of buying and selling merchandise. Our backend infrastructure is expertly developed in Rust, utilizing PostgreSQL for advanced database management. The Axum Web Framework enhances our backend API, while SQLx ensures seamless database connectivity. For object storage, AWS S3 SDK is employed, with CloudFlare R2 providing object storage solutions in production environments. Sellorama is dedicated to offering a smooth and efficient user experience. Discover our API and access detailed documentation at https://sellorama-api.gauthamkj.site/docs .
 
 ## Environment Setup
 
