@@ -4,7 +4,7 @@ use crate::{
     errors::MyError,
     objects::{get_presigned_url, put_object},
     user::{check_session_validity, extract_session_header, GeneralResponse},
-    AppState, Filters, Order,
+    AppState, CommentFilters, Filters, Order,
 };
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -18,6 +18,11 @@ use serde_json::json;
 use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+struct PaginationParams {
+    take: u32,
+    offset: u32,
+}
 
 #[derive(Deserialize, ToSchema, IntoParams)]
 pub struct ItemsQuery {
@@ -34,6 +39,21 @@ pub struct ItemsQuery {
     search_string: Option<String>,
 }
 
+#[derive(Deserialize, ToSchema, IntoParams)]
+pub struct CommentQuery {
+    /// Number of items to fetch per page
+    take: Option<u32>,
+    /// Page number to fetch
+    page_no: Option<u32>,
+    /// The Filter should be of either Rating(Order), DateOfCreation(Order)
+    ///
+    /// The Order should be either Inc or Dec
+    #[schema(value_type=String,example = "Rating(Inc)")]
+    filter: Option<String>,
+    /// Search String to filter items
+    item_id: Uuid,
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct ItemForm {
     title: String,
@@ -44,11 +64,20 @@ pub struct ItemForm {
 }
 
 #[derive(Deserialize, ToSchema)]
+pub struct EditItemForm {
+    title: String,
+    content: String,
+    #[schema(value_type = String, format = Float, example = "10.00")]
+    price: rust_decimal::Decimal,
+}
+
+#[derive(Deserialize, ToSchema,FromRow,Serialize)]
 pub struct RateForm {
     rating: i32,
     content: String,
     item_id: Uuid,
 }
+
 
 #[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ItemId {
@@ -313,12 +342,11 @@ pub async fn edit_item(
     headers: HeaderMap,
     state: State<AppState>,
     Path(item_id): Path<Uuid>,
-    Form(form_data): Form<ItemForm>,
+    Form(form_data): Form<EditItemForm>,
 ) -> Result<impl IntoResponse, MyError> {
     let session_id = extract_session_header(headers).await?;
     match check_session_validity(&state.db_pool, session_id).await {
         Some(response) => {
-            println!("{:?}", response);
             let query = r#"
                 UPDATE "item" SET
                 "title" = $1,
@@ -355,7 +383,7 @@ pub async fn edit_item(
         ("session_id"=[])
     ),
     responses(
-        (status = 200 , body = GeneralResponse),
+        (status = 200 , body = ItemResponse),
         (status = 401 , body = GeneralResponse),
         (status = 500 , body = GeneralResponse),
     )
@@ -557,6 +585,34 @@ pub async fn rate_item(
 }
 
 #[utoipa::path(
+    get,
+    path = "/item/comments",
+    params(
+        CommentQuery
+    ),
+    responses(
+        (status = 200, body = Vec<RateForm>),
+        (status = 500, body = ErrorResponse)
+    )
+)]
+///Get Comments for an Item
+///
+/// Endpoint to get comments for an item
+pub async fn get_comments(
+    state: State<AppState>,
+    Query(pagination): Query<CommentQuery>,
+) -> Result<impl IntoResponse, MyError> {
+    let query = paginate_comments(pagination);
+    match sqlx::query_as::<_, RateForm>(query?.as_str())
+        .fetch_all(&state.db_pool)
+        .await
+        .map_err(|_| MyError::InternalServerError)?
+    {
+        response => Ok((StatusCode::OK, Json(json!(response)))),
+    }
+}
+
+#[utoipa::path(
     post,
     path = "/item/stock",
     security(
@@ -635,7 +691,108 @@ pub async fn search_suggestions(
     }
 }
 
-fn paginate_items(pagination: ItemsQuery) -> Result<String,MyError> {
+fn fetch_pagination_params(params: &ItemsQuery) -> String {
+    let mut query_params = PaginationParams {
+        take: 10,
+        offset: 0,
+    };
+    // Setting default values for the pagination
+    match params.take {
+        Some(take) => query_params.take = take,
+        None => query_params.take = 10,
+    }
+    match params.page_no {
+        Some(page_no) => {
+            query_params.offset = if page_no > 0 {
+                (page_no - 1) * query_params.take
+            } else {
+                0
+            }
+        }
+        None => query_params.offset = 0,
+    }
+    let pagination_query = format!("LIMIT {} OFFSET {}", query_params.take, query_params.offset);
+    pagination_query
+}
+
+fn paginate_items(pagination: ItemsQuery) -> Result<String, MyError> {
+    let pagination_query = fetch_pagination_params(&pagination);
+    let mut query = r#"SELECT * FROM "item""#.to_owned();
+    let search_token;
+    match pagination.search_string {
+        Some(token) => {
+            search_token = format!(
+                r#"WHERE to_tsvector("title"|| ' ' ||"content") @@ websearch_to_tsquery('english','{}')"#,
+                token
+            )
+            .to_owned();
+        }
+        None => search_token = r#""#.to_owned(),
+    }
+    let mut order_query = "";
+    match pagination.filter {
+        Some(filter_type) => {
+            let filter_type: Filters =
+                serde_json::from_value::<Filters>(serde_json::Value::String(filter_type))
+                    .map_err(|_| MyError::UnproccessableEntityError)?;
+            match filter_type {
+                Filters::Alphabetical(order) => match order {
+                    Order::Inc => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "title" ASC "#;
+                    }
+                    Order::Dec => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "title" DESC "#;
+                    }
+                },
+                Filters::DateOfCreation(order) => match order {
+                    Order::Inc => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "date_created" ASC "#;
+                    }
+                    Order::Dec => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "date_created" DESC "#;
+                    }
+                },
+                Filters::Rating(order) => match order {
+                    Order::Inc => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "rating" ASC "#;
+                    }
+                    Order::Dec => {
+                        query = format!("{} {}  {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "rating" DESC NULLS LAST"#;
+                    }
+                },
+                Filters::Price(order) => match order {
+                    Order::Inc => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "price" ASC "#;
+                    }
+                    Order::Dec => {
+                        query = format!("{} {} {}", query, search_token, pagination_query);
+                        order_query = r#"ORDER BY "price" DESC "#;
+                    }
+                },
+            }
+        }
+        None => query = format!("{} {} {} ", query, search_token, pagination_query),
+    }
+    query = format!(
+        r#"SELECT 
+        t1.item_id, t1.user_id,t1.title,t1.content,t1.price,t1.rating,t2.stock 
+         FROM ({}) AS t1 
+         LEFT JOIN 
+         ( SELECT "item_id","quantity" as stock from "stock") AS t2 
+         ON t1."item_id" = t2."item_id" {}"#,
+        query, order_query
+    );
+    Ok(query)
+}
+
+fn paginate_comments(pagination: CommentQuery) -> Result<String, MyError> {
     struct PaginationParams {
         take: u32,
         offset: u32,
@@ -659,103 +816,44 @@ fn paginate_items(pagination: ItemsQuery) -> Result<String,MyError> {
         }
         None => query_params.offset = 0,
     }
-    let mut query = r#"SELECT * FROM "item""#.to_owned();
+    let mut query = format!(
+        r#"SELECT "rating","content","item_id" FROM "comment" where "item_id"= '{}'"#,
+        pagination.item_id
+    )
+    .to_owned();
     let pagination_query = format!("LIMIT {} OFFSET {}", query_params.take, query_params.offset);
-    let search_token;
-    match pagination.search_string {
-        Some(token) => {
-            search_token = format!(
-                r#"WHERE to_tsvector("title"|| ' ' ||"content") @@ websearch_to_tsquery('english','{}')"#,
-                token
-            )
-            .to_owned();
-        }
-        None => search_token = r#""#.to_owned(),
-    }
-    let mut order_query="";
+    let mut order_query = "";
     match pagination.filter {
         Some(filter_type) => {
-            let filter_type: Filters = serde_json::from_value::<Filters>(serde_json::Value::String(filter_type)).map_err(|_|MyError::UnproccessableEntityError)?;
+            let filter_type: CommentFilters =
+                serde_json::from_value::<CommentFilters>(serde_json::Value::String(filter_type))
+                    .map_err(|_| MyError::UnproccessableEntityError)?;
             match filter_type {
-            Filters::Alphabetical(order) => match order {
-                Order::Inc => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token, pagination_query
-                    );
-                    order_query =  r#"ORDER BY "title" ASC "#;
-                }
-                Order::Dec => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token, pagination_query
-                    );
-                    order_query =  r#"ORDER BY "title" DESC "#;
-                }
-            },
-            Filters::DateOfCreation(order) => match order {
-                Order::Inc => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token, pagination_query
-                    );
-                    order_query = r#"ORDER BY "date_created" ASC "#;
-                }
-                Order::Dec => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token, pagination_query
-                    );
-                    order_query = r#"ORDER BY "date_created" DESC "#;
-                }
-            },
-            Filters::Rating(order) => match order {
-                Order::Inc => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token ,pagination_query
-                    );
-                    order_query = r#"ORDER BY "rating" ASC "#;
-                }
-                Order::Dec => {
-                    query = format!(
-                        "{} {}  {}",
-                        query,
-                        search_token,
-                        
-                        pagination_query
-                    );
-                    order_query = r#"ORDER BY "rating" DESC NULLS LAST"#;
-                }
-            },
-            Filters::Price(order) => match order {
-                Order::Inc => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token, pagination_query
-                    );
-                    order_query = r#"ORDER BY "price" ASC "#;
-                }
-                Order::Dec => {
-                    query = format!(
-                        "{} {} {}",
-                        query, search_token, pagination_query
-                    );
-                    order_query = r#"ORDER BY "price" DESC "#;
-                }
-            },
-        }},
-        None => query = format!("{} {} {} ", query, search_token, pagination_query),
+                CommentFilters::DateOfCreation(order) => match order {
+                    Order::Inc => {
+                        query = format!("{} {}", query, pagination_query);
+                        order_query = r#"ORDER BY "date_created" ASC "#;
+                    }
+                    Order::Dec => {
+                        query = format!("{} {}", query, pagination_query);
+                        order_query = r#"ORDER BY "date_created" DESC "#;
+                    }
+                },
+                CommentFilters::Rating(order) => match order {
+                    Order::Inc => {
+                        query = format!("{} {}", query, pagination_query);
+                        order_query = r#"ORDER BY "rating" ASC "#;
+                    }
+                    Order::Dec => {
+                        query = format!("{} {}", query, pagination_query);
+                        order_query = r#"ORDER BY "rating" DESC "#;
+                    }
+                },
+            }
+        }
+        None => query = format!("{} {}", query, pagination_query),
     }
-    query = format!(
-        r#"SELECT 
-        t1.item_id, t1.user_id,t1.title,t1.content,t1.price,t1.rating,t2.stock 
-         FROM ({}) AS t1 
-         LEFT JOIN 
-         ( SELECT "item_id","quantity" as stock from "stock") AS t2 
-         ON t1."item_id" = t2."item_id" {}"#,
-        query,order_query
-    );
+    query = format!(r#"{} {}"#, query, order_query);
     Ok(query)
 }
 

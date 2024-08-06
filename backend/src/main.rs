@@ -33,8 +33,8 @@ use cart::{add_item, check_cart, get_cart, update_cart_item, Cart, CartItem, Car
 use errors::ErrorResponse;
 use item::{
     create_item, delete_item, edit_item, edit_stock, get_item, get_items, rate_item,
-    search_suggestions, Item, ItemForm, ItemId, ItemResponse, ItemStock, PageResponse, RateForm,
-    SearchQuery, SearchResult,
+    search_suggestions, CommentQuery, EditItemForm, Item, ItemForm, ItemId, ItemResponse,
+    ItemStock, PageResponse, RateForm, SearchQuery, SearchResult
 };
 use order::{
     create_order, get_orders, set_dispatch_by_item_id, AllOrderDetails, CartError, DispatchForm,
@@ -59,6 +59,29 @@ pub enum Filters {
     Price(Order),
 }
 
+#[derive(PartialEq, ToSchema)]
+pub enum CommentFilters {
+    Rating(Order),
+    DateOfCreation(Order),
+}
+
+impl<'de> Deserialize<'de> for CommentFilters {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = String::deserialize(deserializer)?;
+        match input.as_str() {
+            "Rating" => Ok(CommentFilters::Rating(Order::Inc)),
+            "Rating(Inc)" => Ok(CommentFilters::Rating(Order::Inc)),
+            "Rating(Dec)" => Ok(CommentFilters::Rating(Order::Dec)),
+            "DateOfCreation" => Ok(CommentFilters::DateOfCreation(Order::Inc)),
+            "DateOfCreation(Inc)" => Ok(CommentFilters::DateOfCreation(Order::Inc)),
+            "DateOfCreation(Dec)" => Ok(CommentFilters::DateOfCreation(Order::Dec)),
+            _ => Err(serde::de::Error::custom("Invalid value")),
+        }
+    }
+}
 impl<'de> Deserialize<'de> for Filters {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -114,6 +137,7 @@ title = "Sellorama"),
         item::get_items,
         item::delete_item,
         item::rate_item,
+        item::get_comments,
         item::edit_stock,
         item::search_suggestions,
         cart::get_cart,
@@ -137,12 +161,16 @@ title = "Sellorama"),
             Item,
             ItemId,
             ItemForm,
+            RateForm,
             ItemResponse,
+            EditItemForm,
             ItemStock,
             PageResponse,
             SearchQuery,
             SearchResult,
             RateForm,
+            CommentFilters,
+            CommentQuery,
             Cart,
             CartItem,
             CartResponse,
@@ -263,6 +291,7 @@ pub fn app(appstate: AppState) -> Router {
             "/:item_id",
             delete(delete_item).put(edit_item).get(get_item),
         )
+        .route("/comments", get(item::get_comments))
         .route("/", get(get_items))
         .route("/stock", post(edit_stock))
         .route("/search_suggestions", get(search_suggestions))
