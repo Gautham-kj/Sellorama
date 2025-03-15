@@ -34,7 +34,7 @@ use errors::ErrorResponse;
 use item::{
     create_item, delete_item, edit_item, edit_stock, get_item, get_items, rate_item,
     search_suggestions, CommentQuery, EditItemForm, Item, ItemForm, ItemId, ItemResponse,
-    ItemStock, PageResponse, RateForm, SearchQuery, SearchResult
+    ItemStock, PageResponse, RateForm, SearchQuery, SearchResult,
 };
 use order::{
     create_order, get_orders, set_dispatch_by_item_id, AllOrderDetails, CartError, DispatchForm,
@@ -280,7 +280,7 @@ pub fn app(appstate: AppState) -> Router {
         .route("/login", post(user_login))
         .route("/signup", post(signup))
         .route("/logout", post(logout))
-        .route("/:username", get(get_user_by_id))
+        .route("/{username}", get(get_user_by_id))
         .route("/address", post(create_user_address))
         .route("/myorders", get(get_user_orders))
         .with_state(appstate.clone());
@@ -288,7 +288,7 @@ pub fn app(appstate: AppState) -> Router {
     let item_router = Router::new()
         .route("/create", post(create_item))
         .route(
-            "/:item_id",
+            "/{item_id}",
             delete(delete_item).put(edit_item).get(get_item),
         )
         .route("/comments", get(item::get_comments))

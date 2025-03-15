@@ -1,7 +1,9 @@
-use crate::errors::MyError;
-use crate::user::{check_session_validity, extract_session_header, GeneralResponse};
-use crate::AppState;
-use crate::CartItem;
+use crate::{
+    errors::MyError,
+    user::{check_session_validity, extract_session_header, GeneralResponse},
+    AppState, CartItem, ErrorResponse,
+};
+
 use axum::extract::Query;
 use axum::{
     extract::State,
