@@ -4,7 +4,7 @@ use crate::{
     errors::MyError,
     objects::{get_presigned_url, put_object},
     user::{check_session_validity, extract_session_header, GeneralResponse},
-    AppState, CommentFilters, Filters, Order,
+    AppState, CommentFilters, ErrorResponse, Filters, Order,
 };
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -70,14 +70,12 @@ pub struct EditItemForm {
     #[schema(value_type = String, format = Float, example = "10.00")]
     price: rust_decimal::Decimal,
 }
-
-#[derive(Deserialize, ToSchema,FromRow,Serialize)]
+#[derive(Deserialize, ToSchema, FromRow, Serialize)]
 pub struct RateForm {
     rating: i32,
     content: String,
     item_id: Uuid,
 }
-
 
 #[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ItemId {
