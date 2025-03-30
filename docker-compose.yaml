@@ -17,21 +17,21 @@ services:
         networks:
             network1:
                 ipv4_address: 172.20.0.5
-    backend:
-        container_name: sellorama_backend
-        build:
-            context: ./backend
-            dockerfile: Dockerfile
-        restart: always
-        env_file:
-            - .env
-        depends_on:
-            - database
-        ports:
-            - 9000:9000
-        networks:
-            network1:
-                ipv4_address: 172.20.0.6
+    # backend:
+    #     container_name: sellorama_backend
+    #     build:
+    #         context: ./backend
+    #         dockerfile: Dockerfile
+    #     restart: always
+    #     env_file:
+    #         - .env
+    #     depends_on:
+    #         - database
+    #     ports:
+    #         - 9000:9000
+    #     networks:
+    #         network1:
+    #             ipv4_address: 172.20.0.6
     adminer:
         container_name: adminer
         image: adminer
