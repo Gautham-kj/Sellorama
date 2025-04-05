@@ -5,34 +5,47 @@ edition = "2021"
 
 [dependencies]
 #http server
-axum = {version = "0.8.3",features = ["multipart"]}
-tokio = {version= "1.44.1",features =["rt-multi-thread"]}
+axum = { version = "0.8.1", features = ["multipart"] }
+tokio = { version = "1.44.1", features = ["rt-multi-thread"] }
 
 #database connection
-sqlx = { version = "0.8.1", features = ["postgres", "macros","runtime-async-std","uuid","chrono","rust_decimal"] }
-tower-http = {version = "0.6.2", features = ["cors"]}
+sqlx = { version = "0.8.3", features = [
+    "postgres",
+    "macros",
+    "runtime-async-std",
+    "uuid",
+    "chrono",
+    "rust_decimal",
+] }
+tower-http = { version = "0.6.2", features = ["cors"] }
 dotenv = "0.15.0"
 
 #data validation and serialization
-chrono = {version = "0.4.40",features = ["serde"]}
+chrono = { version = "0.4.40", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 base64 = "0.22.1"
-uuid = {version = "1.16.0",features = ["v4","serde"]}
+uuid = { version = "1.16.0", features = ["v4", "serde"] }
 regex = "1.11.1"
 rust_decimal = { version = "1.37.1", features = ["std", "serde"] }
-argon2 = {version = "0.5.3", features = ["password-hash"]}
+argon2 = { version = "0.5.3", features = ["password-hash"] }
 
 #aws s3
 aws-config = "1.6.1"
-aws-sdk-s3 = {version="1.81.0" ,features=["behavior-version-latest"]}
+aws-sdk-s3 = { version = "1.82.0", features = ["behavior-version-latest"] }
 
 #documentation
-utoipa = { version = "5.3.1", features = ["uuid", "axum_extras", "chrono", "serde_yaml","decimal"] }
-utoipa-swagger-ui = {version="8.1.0",features=["axum"]}
-utoipa-rapidoc = {version="6.0.0",features=["axum"]}
-utoipa-redoc = {version="6.0.0",features=["axum"]}
+utoipa = { version = "5.3.1", features = [
+    "uuid",
+    "axum_extras",
+    "chrono",
+    "serde_yaml",
+    "decimal",
+] }
+utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
+utoipa-rapidoc = { version = "6.0.0", features = ["axum"] }
+utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 anyhow = "1.0.97"
 
 #testing
-reqwest = {version = "0.12.15",features = ["multipart","blocking"]}
+reqwest = { version = "0.12.15", features = ["multipart", "blocking"] }
