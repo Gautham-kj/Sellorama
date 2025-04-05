@@ -60,6 +60,7 @@ pub struct ItemForm {
     content: String,
     #[schema(value_type = String, format = Float, example = "10.00")]
     price: rust_decimal::Decimal,
+    #[schema(value_type = Vec<String>, format = "binary", required = false)]
     item_media: Option<Vec<Vec<u8>>>,
 }
 
